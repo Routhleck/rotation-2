@@ -18,11 +18,16 @@ num_outputs = 2     # 输出层神经元个数
 
 time_step = 4/ 30 * u.second
 bst.environ.set(dt=time_step)   # 设置仿真时间步长
-num_steps  = 4 + 8 + 8
+stimulate = 4
+delay = 8
+response = 8
+num_steps  = stimulate + delay + response
 
 batch_size = 128
-epoch = 500
+epoch_1 = 500
+epoch_2 = 1000
 
+bst.random.seed(42)
 
 net = SNN(num_inputs, num_hidden, num_outputs)
 
@@ -34,16 +39,16 @@ x_data = u.math.zeros((num_steps, batch_size, net.num_in))
 middle_index = (net.num_in - go_cue_inputs) // 2
 for i in range(batch_size):
     if y_data[i] == 1:
-        x_data = x_data.at[:4, i, :middle_index].set(bst.random.rand(4, middle_index) < freq * bst.environ.get_dt())
-        x_data = x_data.at[:4, i, middle_index:net.num_in - go_cue_inputs].set(bst.random.rand(4, net.num_in - middle_index - go_cue_inputs) < 0.5 * freq * bst.environ.get_dt())
+        x_data = x_data.at[:stimulate, i, :middle_index].set(bst.random.rand(stimulate, middle_index) < freq * bst.environ.get_dt())
+        x_data = x_data.at[:stimulate, i, middle_index:net.num_in - go_cue_inputs].set(bst.random.rand(stimulate, net.num_in - middle_index - go_cue_inputs) < 0.5 * freq * bst.environ.get_dt())
     else:
-        x_data = x_data.at[:4, i, :middle_index].set(bst.random.rand(4, net.num_in - middle_index - go_cue_inputs) < 0.5 * freq * bst.environ.get_dt())
-        x_data = x_data.at[:4, i, middle_index:net.num_in - go_cue_inputs].set(bst.random.rand(4, middle_index) < freq * bst.environ.get_dt())
+        x_data = x_data.at[:stimulate, i, :middle_index].set(bst.random.rand(stimulate, net.num_in - middle_index - go_cue_inputs) < 0.5 * freq * bst.environ.get_dt())
+        x_data = x_data.at[:stimulate, i, middle_index:net.num_in - go_cue_inputs].set(bst.random.rand(stimulate, middle_index) < freq * bst.environ.get_dt())
 
-x_data = x_data.at[:4, :, net.num_in - go_cue_inputs:].set(u.math.ones((4, batch_size, go_cue_inputs)))
-x_data = x_data.at[12:16, :, net.num_in - go_cue_inputs:].set(u.math.ones((4, batch_size, go_cue_inputs)))
+x_data = x_data.at[:stimulate, :, net.num_in - go_cue_inputs:].set(u.math.ones((stimulate, batch_size, go_cue_inputs)))
+x_data = x_data.at[stimulate + delay: stimulate + delay +stimulate, :, net.num_in - go_cue_inputs:].set(u.math.ones((stimulate, batch_size, go_cue_inputs)))
 
-plot_data(x_data)
+# plot_data(x_data)
 
 def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, show=True):
     fig, gs = bts.visualize.get_figure(*dim, 3, 3)
@@ -67,8 +72,8 @@ def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, 
 
 def print_classification_accuracy(output, target):
     """一个简易的小工具函数，用于计算分类准确率"""
-    m = u.math.max(output, axis=0)  # 获取最大值
-    am = u.math.argmax(m, axis=1)  # 获取最大值的索引
+    # m = u.math.max(output, axis=0)  # 获取最大值
+    am = get_model_predict(output)  # 获取最大值的索引
     acc = u.math.mean(target == am)  # 与目标值比较
     print("准确率 %.3f" % acc)
 
@@ -89,34 +94,84 @@ o_g = []
 r_V = []
 r2o_bias = []
 r2o_weight = []
+r2r_bias = []
+r2r_weight = []
+r2r_g = []
+model_predict = []
 
-def loss_fn():
+def get_model_predict(output):
+    m = u.math.max(output, axis=0)  # 获取最大值
+    am = u.math.argmax(m, axis=1)  # 获取最大值的索引
+    return am
+
+def loss_fn_1():
     predictions = bst.compile.for_loop(net.update, x_data)
-    predictions = predictions[12:]
+
+    predictions = predictions[stimulate+delay:]
+    model_predict.append(get_model_predict(predictions))
     predictions = u.math.mean(predictions, axis=0)
+
     return bts.metric.softmax_cross_entropy_with_integer_labels(predictions, y_data).mean()
 
+def loss_fn_2():
+    predictions = bst.compile.for_loop(net.update, x_data)
+
+    delays = predictions[:stimulate+delay]
+    delay_loss = u.math.mean(u.math.abs(delays[:, :, 0]) + u.math.abs(delays[:, :, 1]))
+
+    predictions = predictions[stimulate + delay:]
+    model_predict.append(get_model_predict(predictions))
+    predictions = u.math.mean(predictions, axis=0)
+    return bts.metric.softmax_cross_entropy_with_integer_labels(predictions, y_data).mean() + 0.00005 * delay_loss
 
 
-@bst.compile.jit
-def train_fn():
+# @bst.compile.jit
+def train_fn_1():
     bst.nn.init_all_states(net, batch_size=batch_size)
-    grads, l = bst.augment.grad(loss_fn, net.states(bst.ParamState), return_value=True)()
+    grads, l = bst.augment.grad(loss_fn_1, net.states(bst.ParamState), return_value=True)()
     optimizer.update(grads)
-    states = net.states()
 
-    # i2r_bias.append(np.asarray(states['i2r', 'layers', 0, 'weight'].value['bias'].mantissa))
-    # i2r_weight.append(np.asarray(states['i2r','layers', 0, 'weight'].value['weight'].mantissa))
-    # i2r_g.append(np.asarray(states['i2r','layers', 1, 'g'].value.mantissa))
-    # o_g.append(np.asarray(states['o','g'].value))
-    # r_V.append(np.asarray(states['r','V'].value.mantissa))
-    # r2o_bias.append(np.asarray(states['r2o', 'weight'].value['bias']))
-    # r2o_weight.append(np.asarray(states['r2o','weight'].value['weight']))
+    states = net.states()
+    i2r_bias.append(np.asarray(states['i2r', 'layers', 0, 'weight'].value['bias'].mantissa))
+    i2r_weight.append(np.asarray(states['i2r','layers', 0, 'weight'].value['weight'].mantissa))
+    i2r_g.append(np.asarray(states['i2r','layers', 1, 'g'].value.mantissa))
+    o_g.append(np.asarray(states['o','g'].value))
+    r_V.append(np.asarray(states['r','V'].value.mantissa))
+    r2o_bias.append(np.asarray(states['r2o', 'weight'].value['bias']))
+    r2o_weight.append(np.asarray(states['r2o','weight'].value['weight']))
+    r2r_bias.append(np.asarray(states['r2r', 'layers', 0, 'weight'].value['bias'].mantissa))
+    r2r_weight.append(np.asarray(states['r2r','layers', 0, 'weight'].value['weight'].mantissa))
+    r2r_g.append(np.asarray(states['r2r','layers', 1, 'g'].value.mantissa))
+    return l
+
+# @bst.compile.jit
+def train_fn_2():
+    bst.nn.init_all_states(net, batch_size=batch_size)
+    grads, l = bst.augment.grad(loss_fn_2, net.states(bst.ParamState), return_value=True)()
+    optimizer.update(grads)
+
+    states = net.states()
+    i2r_bias.append(np.asarray(states['i2r', 'layers', 0, 'weight'].value['bias'].mantissa))
+    i2r_weight.append(np.asarray(states['i2r','layers', 0, 'weight'].value['weight'].mantissa))
+    i2r_g.append(np.asarray(states['i2r','layers', 1, 'g'].value.mantissa))
+    o_g.append(np.asarray(states['o','g'].value))
+    r_V.append(np.asarray(states['r','V'].value.mantissa))
+    r2o_bias.append(np.asarray(states['r2o', 'weight'].value['bias']))
+    r2o_weight.append(np.asarray(states['r2o','weight'].value['weight']))
+    r2r_bias.append(np.asarray(states['r2r', 'layers', 0, 'weight'].value['bias'].mantissa))
+    r2r_weight.append(np.asarray(states['r2r','layers', 0, 'weight'].value['weight'].mantissa))
+    r2r_g.append(np.asarray(states['r2r','layers', 1, 'g'].value.mantissa))
     return l
 
 train_losses = []
-for i in range(1, epoch + 1):
-    loss = train_fn()
+for i in range(1, epoch_1 + 1):
+    loss = train_fn_1()
+    train_losses.append(loss)
+    if i % 10 == 0:
+        print(f'Epoch {i}, Loss = {loss:.4f}')
+
+for i in range(epoch_1 + 1, epoch_1 + epoch_2 + 1):
+    loss = train_fn_2()
     train_losses.append(loss)
     if i % 10 == 0:
         print(f'Epoch {i}, Loss = {loss:.4f}')
@@ -132,13 +187,17 @@ predict_and_visualize_net_activity(net)
 from export import save_input, save_train_states
 
 states_dict = {
-    'i2r_bias': i2r_bias,
+    # 'i2r_bias': i2r_bias,
     'i2r_weight': i2r_weight,
-    'i2r_g': i2r_g,
-    'o_g': o_g,
+    # 'i2r_g': i2r_g,
+    # 'o_g': o_g,
     'r_V': r_V,
-    'r2o_bias': r2o_bias,
-    'r2o_weight': r2o_weight
+    # 'r2o_bias': r2o_bias,
+    'r2o_weight': r2o_weight,
+    # 'r2r_bias': r2r_bias,
+    'r2r_weight': r2r_weight,
+    # 'r2r_g': r2r_g
+    'model_predict': model_predict
 }
 
 save_input(x_data, y_data, filename="inputs.npz")
