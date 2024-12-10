@@ -18,14 +18,16 @@ num_outputs = 2     # 输出层神经元个数
 
 time_step = 4/ 30 * u.second
 bst.environ.set(dt=time_step)   # 设置仿真时间步长
-stimulate = 4
-delay = 8
-response = 8
+
+scale = 4
+stimulate = 4 * scale
+delay = 8 * scale
+response = 8 * scale
 num_steps  = stimulate + delay + response
 
 batch_size = 128
-epoch_1 = 500
-epoch_2 = 1000
+epoch_1 = 30
+epoch_2 = 50
 
 bst.random.seed(42)
 
@@ -64,8 +66,8 @@ def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, 
         ax.plot(mem[:, i])
 
         # 在横坐标为4和12的位置画竖线
-        ax.axvline(x=4, color='r', linestyle='--')
-        ax.axvline(x=12, color='r', linestyle='--')
+        ax.axvline(x=stimulate, color='r', linestyle='--')
+        ax.axvline(x=stimulate+delay, color='r', linestyle='--')
         ax.set_title(f"Neuron {i}, True class: {y_data[i]}") if y_data is not None else ax.set_title(f"Neuron {i}")
     if show:
         plt.show()
@@ -122,45 +124,45 @@ def loss_fn_2():
     predictions = predictions[stimulate + delay:]
     model_predict.append(get_model_predict(predictions))
     predictions = u.math.mean(predictions, axis=0)
-    return bts.metric.softmax_cross_entropy_with_integer_labels(predictions, y_data).mean() + 0.00005 * delay_loss
+    return bts.metric.softmax_cross_entropy_with_integer_labels(predictions, y_data).mean() + 0.001 * delay_loss
 
 
-# @bst.compile.jit
+@bst.compile.jit
 def train_fn_1():
     bst.nn.init_all_states(net, batch_size=batch_size)
     grads, l = bst.augment.grad(loss_fn_1, net.states(bst.ParamState), return_value=True)()
     optimizer.update(grads)
 
-    states = net.states()
-    i2r_bias.append(np.asarray(states['i2r', 'layers', 0, 'weight'].value['bias'].mantissa))
-    i2r_weight.append(np.asarray(states['i2r','layers', 0, 'weight'].value['weight'].mantissa))
-    i2r_g.append(np.asarray(states['i2r','layers', 1, 'g'].value.mantissa))
-    o_g.append(np.asarray(states['o','g'].value))
-    r_V.append(np.asarray(states['r','V'].value.mantissa))
-    r2o_bias.append(np.asarray(states['r2o', 'weight'].value['bias']))
-    r2o_weight.append(np.asarray(states['r2o','weight'].value['weight']))
-    r2r_bias.append(np.asarray(states['r2r', 'layers', 0, 'weight'].value['bias'].mantissa))
-    r2r_weight.append(np.asarray(states['r2r','layers', 0, 'weight'].value['weight'].mantissa))
-    r2r_g.append(np.asarray(states['r2r','layers', 1, 'g'].value.mantissa))
+    # states = net.states()
+    # i2r_bias.append(np.asarray(states['i2r', 'layers', 0, 'weight'].value['bias'].mantissa))
+    # i2r_weight.append(np.asarray(states['i2r','layers', 0, 'weight'].value['weight'].mantissa))
+    # i2r_g.append(np.asarray(states['i2r','layers', 1, 'g'].value.mantissa))
+    # o_g.append(np.asarray(states['o','g'].value))
+    # r_V.append(np.asarray(states['r','V'].value.mantissa))
+    # r2o_bias.append(np.asarray(states['r2o', 'weight'].value['bias']))
+    # r2o_weight.append(np.asarray(states['r2o','weight'].value['weight']))
+    # r2r_bias.append(np.asarray(states['r2r', 'layers', 0, 'weight'].value['bias'].mantissa))
+    # r2r_weight.append(np.asarray(states['r2r','layers', 0, 'weight'].value['weight'].mantissa))
+    # r2r_g.append(np.asarray(states['r2r','layers', 1, 'g'].value.mantissa))
     return l
 
-# @bst.compile.jit
+@bst.compile.jit
 def train_fn_2():
     bst.nn.init_all_states(net, batch_size=batch_size)
     grads, l = bst.augment.grad(loss_fn_2, net.states(bst.ParamState), return_value=True)()
     optimizer.update(grads)
 
-    states = net.states()
-    i2r_bias.append(np.asarray(states['i2r', 'layers', 0, 'weight'].value['bias'].mantissa))
-    i2r_weight.append(np.asarray(states['i2r','layers', 0, 'weight'].value['weight'].mantissa))
-    i2r_g.append(np.asarray(states['i2r','layers', 1, 'g'].value.mantissa))
-    o_g.append(np.asarray(states['o','g'].value))
-    r_V.append(np.asarray(states['r','V'].value.mantissa))
-    r2o_bias.append(np.asarray(states['r2o', 'weight'].value['bias']))
-    r2o_weight.append(np.asarray(states['r2o','weight'].value['weight']))
-    r2r_bias.append(np.asarray(states['r2r', 'layers', 0, 'weight'].value['bias'].mantissa))
-    r2r_weight.append(np.asarray(states['r2r','layers', 0, 'weight'].value['weight'].mantissa))
-    r2r_g.append(np.asarray(states['r2r','layers', 1, 'g'].value.mantissa))
+    # states = net.states()
+    # i2r_bias.append(np.asarray(states['i2r', 'layers', 0, 'weight'].value['bias'].mantissa))
+    # i2r_weight.append(np.asarray(states['i2r','layers', 0, 'weight'].value['weight'].mantissa))
+    # i2r_g.append(np.asarray(states['i2r','layers', 1, 'g'].value.mantissa))
+    # o_g.append(np.asarray(states['o','g'].value))
+    # r_V.append(np.asarray(states['r','V'].value.mantissa))
+    # r2o_bias.append(np.asarray(states['r2o', 'weight'].value['bias']))
+    # r2o_weight.append(np.asarray(states['r2o','weight'].value['weight']))
+    # r2r_bias.append(np.asarray(states['r2r', 'layers', 0, 'weight'].value['bias'].mantissa))
+    # r2r_weight.append(np.asarray(states['r2r','layers', 0, 'weight'].value['weight'].mantissa))
+    # r2r_g.append(np.asarray(states['r2r','layers', 1, 'g'].value.mantissa))
     return l
 
 train_losses = []

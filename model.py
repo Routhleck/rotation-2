@@ -22,13 +22,13 @@ class SNN(bst.nn.DynamicsGroup):
                 b_init=bst.init.ZeroInit(unit=u.mA)  # 偏置初始化为零
             ),
             # 指数衰减层：对信号进行时间上的衰减，使其符合生物神经元动力学
-            bst.nn.Expon(num_rec, tau=10. * u.ms, g_initializer=bst.init.Constant(0. * u.mA))
+            bst.nn.Expon(num_rec, tau=500. * u.ms, g_initializer=bst.init.Constant(0. * u.mA))
         )
 
         # 定义递归层（r），采用LIF神经元模型
         self.r = bst.nn.LIF(
             num_rec,              # 递归层神经元数量
-            tau=10 * u.ms,        # 时间常数，控制膜电位衰减速率
+            tau=500 * u.ms,        # 时间常数，控制膜电位衰减速率
             V_reset=0 * u.mV,     # 膜电位复位值
             V_rest=0 * u.mV,      # 静息膜电位
             V_th=1. * u.mV,       # 膜电位阈值，超过此值时神经元发放脉冲
@@ -41,7 +41,7 @@ class SNN(bst.nn.DynamicsGroup):
                 w_init=bst.init.KaimingNormal(scale=7*(1-(u.math.exp(-bst.environ.get_dt(), unit_to_scale=u.ms))), unit=u.mA),
                 b_init=bst.init.ZeroInit(unit=u.mA)
             ),
-            bst.nn.Expon(num_rec, tau=10. * u.ms, g_initializer=bst.init.Constant(0. * u.mA))
+            bst.nn.Expon(num_rec, tau=500. * u.ms, g_initializer=bst.init.Constant(0. * u.mA))
         )
 
         # 定义从递归层到输出层的连接（突触: r->o），采用线性层
@@ -69,7 +69,7 @@ class SNN(bst.nn.DynamicsGroup):
         # )
         self.o = bst.nn.Expon(
             num_out,                    # 输出层神经元数量
-            tau=10. * u.ms,             # 时间常数，控制输出信号的衰减速率
+            tau=500. * u.ms,             # 时间常数，控制输出信号的衰减速率
             g_initializer=bst.init.Constant(0.)  # 初始化电流为零
         )
 
