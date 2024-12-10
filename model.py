@@ -10,6 +10,7 @@ class SNN(bst.nn.DynamicsGroup):
         self.num_in = num_in   # 输入层神经元数量
         self.num_rec = num_rec # 递归层神经元数量
         self.num_out = num_out # 输出层神经元数量
+        self.last_rec_spikes = u.math.zeros((num_rec,))
 
         # 定义从输入层到递归层的连接（突触: i->r）
         # 使用Sequential将线性层和指数衰减层连接在一起
@@ -21,17 +22,27 @@ class SNN(bst.nn.DynamicsGroup):
                 b_init=bst.init.ZeroInit(unit=u.mA)  # 偏置初始化为零
             ),
             # 指数衰减层：对信号进行时间上的衰减，使其符合生物神经元动力学
-            bst.nn.Expon(num_rec, tau=10. * u.ms, g_initializer=bst.init.Constant(0. * u.mA))
+            bst.nn.Expon(num_rec, tau=50. * u.ms, g_initializer=bst.init.Constant(0. * u.mA))
         )
 
         # 定义递归层（r），采用LIF神经元模型
         self.r = bst.nn.LIF(
             num_rec,              # 递归层神经元数量
-            tau=20 * u.ms,        # 时间常数，控制膜电位衰减速率
+            tau=50 * u.ms,        # 时间常数，控制膜电位衰减速率
             V_reset=0 * u.mV,     # 膜电位复位值
             V_rest=0 * u.mV,      # 静息膜电位
             V_th=1. * u.mV,       # 膜电位阈值，超过此值时神经元发放脉冲
             spk_fun=bst.surrogate.ReluGrad()  # 近似求导函数，用于实现脉冲发放
+        )
+
+        # TODO: recurrent layer to recurrent layer
+        self.r2r = bst.nn.Sequential(
+            bst.nn.Linear(
+                num_rec, num_rec,
+                w_init=bst.init.KaimingNormal(scale=7*(1-(u.math.exp(-bst.environ.get_dt(), unit_to_scale=u.ms))), unit=u.mA),
+                b_init=bst.init.ZeroInit(unit=u.mA)
+            ),
+            bst.nn.Expon(num_rec, tau=50. * u.ms, g_initializer=bst.init.Constant(0. * u.mA))
         )
 
         # 定义从递归层到输出层的连接（突触: r->o），采用线性层
@@ -43,19 +54,26 @@ class SNN(bst.nn.DynamicsGroup):
         # 定义输出层（o），使用指数衰减层模拟输出信号的时间衰减
         self.o = bst.nn.Expon(
             num_out,                    # 输出层神经元数量
-            tau=10. * u.ms,             # 时间常数，控制输出信号的衰减速率
+            tau=50. * u.ms,             # 时间常数，控制输出信号的衰减速率
             g_initializer=bst.init.Constant(0.)  # 初始化电流为零
         )
 
     # update方法：用于执行网络的一次更新，返回输出层的输出
     def update(self, spike):
         # 依次通过 i2r、r、r2o 和 o 计算输出
-        return self.o(self.r2o(self.r(self.i2r(spike))))
+        input_spikes = self.i2r(spike)
+        self.last_rec_spikes = self.r2r(self.r(self.last_rec_spikes))
+
+
+        return self.o(self.r2o(self.r(input_spikes + self.last_rec_spikes)))
 
     # predict方法：用于预测并获取递归层的膜电位值、脉冲输出和最终输出
     def predict(self, spike):
+        input_spikes = self.i2r(spike)
+        self.last_rec_spikes = self.r2r(self.r(self.last_rec_spikes))
+        out = self.o(self.r2o(self.r(input_spikes + self.last_rec_spikes)))
         # 计算递归层的脉冲输出
-        rec_spikes = self.r(self.i2r(spike))
+        rec_spikes = self.r2r(self.r(self.i2r(spike)))
         # 计算最终输出
         out = self.o(self.r2o(rec_spikes))
         # 返回递归层的膜电位值、递归层脉冲输出和最终输出
