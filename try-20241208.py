@@ -4,12 +4,10 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-
-
 import brainstate as bst
 
 from model import SNN
-from utils import plot_data
+from utils import plot_data, data_generate_1208
 
 num_inputs  = 30   # 输入层神经元个数
 go_cue_inputs = 10
@@ -24,6 +22,7 @@ stimulate = 4 * scale
 delay = 8 * scale
 response = 8 * scale
 num_steps  = stimulate + delay + response
+freq = 5 * u.Hz
 
 batch_size = 128
 epoch_1 = 30
@@ -33,24 +32,9 @@ bst.random.seed(42)
 
 net = SNN(num_inputs, num_hidden, num_outputs)
 
-freq = 5 * u.Hz
+x_data, y_data = data_generate_1208(batch_size, num_steps, net, go_cue_inputs, stimulate, delay, freq)
 
-y_data = u.math.asarray(bst.random.rand(batch_size) < 0.5, dtype=int)
-x_data = u.math.zeros((num_steps, batch_size, net.num_in))
-
-middle_index = (net.num_in - go_cue_inputs) // 2
-for i in range(batch_size):
-    if y_data[i] == 1:
-        x_data = x_data.at[:stimulate, i, :middle_index].set(bst.random.rand(stimulate, middle_index) < freq * bst.environ.get_dt())
-        x_data = x_data.at[:stimulate, i, middle_index:net.num_in - go_cue_inputs].set(bst.random.rand(stimulate, net.num_in - middle_index - go_cue_inputs) < 0.5 * freq * bst.environ.get_dt())
-    else:
-        x_data = x_data.at[:stimulate, i, :middle_index].set(bst.random.rand(stimulate, net.num_in - middle_index - go_cue_inputs) < 0.5 * freq * bst.environ.get_dt())
-        x_data = x_data.at[:stimulate, i, middle_index:net.num_in - go_cue_inputs].set(bst.random.rand(stimulate, middle_index) < freq * bst.environ.get_dt())
-
-x_data = x_data.at[:stimulate, :, net.num_in - go_cue_inputs:].set(u.math.ones((stimulate, batch_size, go_cue_inputs)))
-x_data = x_data.at[stimulate + delay: stimulate + delay +stimulate, :, net.num_in - go_cue_inputs:].set(u.math.ones((stimulate, batch_size, go_cue_inputs)))
-
-# plot_data(x_data)
+plot_data(x_data)
 
 def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, show=True):
     fig, gs = bts.visualize.get_figure(*dim, 3, 3)

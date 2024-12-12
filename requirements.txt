@@ -5,3 +5,4 @@ jax
 matplotlib
 seaborn
 tqdm
+numba
