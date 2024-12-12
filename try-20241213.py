@@ -9,7 +9,7 @@ import brainstate as bst
 bst.random.seed(42)
 
 from model import SNN, SNN_ext
-from utils import plot_data, data_generate_1212
+from utils import plot_data, data_generate_1212, current_generate
 
 num_inputs = 20
 num_hidden = 100
@@ -18,21 +18,23 @@ num_outputs = 2
 time_step = 1 * u.ms
 bst.environ.set(dt=time_step)
 
-stimulate = 500 * u.ms
-delay = 1000 * u.ms
-response = 1000 * u.ms
+stimulate = int((500 * u.ms).to_decimal(time_step.unit))
+delay = int((1000 * u.ms).to_decimal(time_step.unit))
+response = int((1000 * u.ms).to_decimal(time_step.unit))
 
-num_steps = (stimulate + delay + response) / time_step
+num_steps = stimulate + delay + response
 freq = 500 * u.Hz
 
 batch_size = 128
-epoch = 1000
+epoch = 50
 
 net = SNN_ext(num_inputs, num_hidden, num_outputs)
 
 x_data, y_data = data_generate_1212(batch_size, num_steps, net, stimulate, delay, freq)
+current = current_generate(batch_size, num_steps, stimulate, delay, 5.0 * u.mA, 15.0 * u.mA)
 
-plot_data(x_data)
+
+# plot_data(x_data)
 
 def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, show=True):
     fig, gs = bts.visualize.get_figure(*dim, 3, 3)
@@ -77,7 +79,7 @@ def get_model_predict(output):
     return am
 
 def loss_fn_1():
-    predictions = bst.compile.for_loop(net.update, x_data)
+    predictions = bst.compile.for_loop(net.update, x_data, current)
 
     predictions = predictions[stimulate+delay:]
     # model_predict.append(get_model_predict(predictions))

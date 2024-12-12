@@ -4,6 +4,16 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 
 
+def current_generate(batch_size, num_steps, stimulate, delay, common_volt, go_cue_volt):
+    current = u.math.zeros((num_steps, batch_size, 1)) * u.mA
+    current[:stimulate, :, :] = common_volt
+    current[stimulate + delay:
+            stimulate + delay + stimulate,
+    :, :] = go_cue_volt
+
+    return current
+
+
 def data_generate_1212(batch_size, num_steps, net, stimulate, delay, freq):
     y_data = u.math.asarray(bst.random.rand(batch_size) < 0.5, dtype=int)
     x_data = u.math.zeros((num_steps, batch_size, net.num_in))
