@@ -186,5 +186,5 @@ states_dict = {
     'model_predict': model_predict
 }
 
-save_input(x_data, y_data, filename="inputs.npz")
-save_train_states(states_dict, filename="states.npz")
+save_input(x_data, y_data, filename="../inputs.npz")
+save_train_states(states_dict, filename="../states.npz")

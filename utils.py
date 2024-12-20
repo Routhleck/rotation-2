@@ -6,10 +6,11 @@ from matplotlib import pyplot as plt
 
 def current_generate(batch_size, num_steps, stimulate, delay, common_volt, go_cue_volt):
     current = u.math.zeros((num_steps, batch_size, 1)) * u.mA
-    current[:stimulate, :, :] = common_volt
+    current[:stimulate + delay, :, :] = common_volt
     current[stimulate + delay:
             stimulate + delay + stimulate,
     :, :] = go_cue_volt
+    current[stimulate + delay + stimulate:, :, :] = common_volt
 
     return current
 
@@ -71,4 +72,24 @@ def plot_data(x_data):
         plt.ylabel("Unit")
         sns.despine()
 
+        plt.show()
+
+def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, show=True):
+    fig, gs = bts.visualize.get_figure(*dim, 3, 3)
+    if spk is not None:
+        mem[spk > 0.0] = spike_height
+    if isinstance(mem, u.Quantity):
+        mem = mem.to_decimal(u.mV)
+    for i in range(np.prod(dim)):
+        if i == 0:
+            a0 = ax = plt.subplot(gs[i])
+        else:
+            ax = plt.subplot(gs[i], sharey=a0)
+        ax.plot(mem[:, i])
+
+        # 在横坐标为4和12的位置画竖线
+        ax.axvline(x=stimulate, color='r', linestyle='--')
+        ax.axvline(x=stimulate + delay, color='r', linestyle='--')
+        ax.set_title(f"Neuron {i}, True class: {y_data[i]}") if y_data is not None else ax.set_title(f"Neuron {i}")
+    if show:
         plt.show()

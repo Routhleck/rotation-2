@@ -5,10 +5,10 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 
-bst.random.seed(42)
+bst.random.seed(43)
 
 from model import SNN_ext
-from utils import data_generate_1212, current_generate
+from utils import data_generate_1212, current_generate, plot_data
 
 num_inputs = 10
 num_hidden = 100
@@ -25,15 +25,26 @@ num_steps = stimulate + delay + response
 freq = 500 * u.Hz
 
 batch_size = 64
-epoch = 100
+epoch = 20
 
 net = SNN_ext(num_inputs, num_hidden, num_outputs)
 
 x_data, y_data = data_generate_1212(batch_size, num_steps, net, stimulate, delay, freq)
-current = current_generate(batch_size, num_steps, stimulate, delay, 10.0 * u.mA, 100.0 * u.mA)
+current = current_generate(batch_size, num_steps, stimulate, delay, 20.0 * u.mA, 50.0 * u.mA)
 
-
+# plot_current = current[:, 1, :]
+#
+# plt.figure()
+# plt.plot(plot_current)
+# plt.xlabel("Time")
+# plt.ylabel("Current")
+# plt.title("Current vs Time")
+# plt.margins(x=0)
+# plt.show()
 # plot_data(x_data)
+
+
+
 
 def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, show=True):
     fig, gs = bts.visualize.get_figure(*dim, 3, 3)
@@ -90,7 +101,9 @@ model_predict = []
 
 
 def loss_fn_1():
-    predictions = bst.compile.for_loop(net.update, x_data, current)
+    for _x_data, _current in zip(x_data, current):
+        spks = net.update(_x_data, _current)
+    # predictions, _V = bst.compile.for_loop(net.update, x_data, current)
 
     predictions = predictions[stimulate + delay:]
     # model_predict.append(get_model_predict(predictions))
@@ -123,7 +136,12 @@ def train_fn_1():
     grads, l = bst.augment.grad(loss_fn_1, net.states(bst.ParamState), return_value=True)()
     optimizer.update(grads)
 
-    return l
+    states = net.states()
+    _i2r_weight = states['i2r', 'layers', 0, 'weight'].value['weight'].mantissa
+    _r2o_weight = states['r2o', 'weight'].value['weight']
+    _r2r_weight = states['r2r', 'layers', 0, 'weight'].value['weight'].mantissa
+
+    return l, _i2r_weight, _r2o_weight, _r2r_weight
 
 
 # @bst.compile.jit
@@ -142,7 +160,7 @@ def train_fn_2():
 
 train_losses = []
 for i in range(1, epoch + 1):
-    loss, _i2r_weight, _r2o_weight, _r2r_weight = train_fn_2()
+    loss, _i2r_weight, _r2o_weight, _r2r_weight = train_fn_1()
     train_losses.append(loss)
 
     i2r_weight.append(_i2r_weight)
@@ -175,5 +193,5 @@ states_dict = {
     'model_predict': model_predict
 }
 
-save_input(x_data, y_data, filename="inputs.npz")
-save_train_states(states_dict, filename="states.npz")
+save_input(x_data, y_data, filename="../inputs.npz")
+save_train_states(states_dict, filename="../states.npz")

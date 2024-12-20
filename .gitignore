@@ -162,3 +162,5 @@ cython_debug/
 
 *.npz
 *.zip
+
+.DS_Store
