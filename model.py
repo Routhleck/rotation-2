@@ -7,10 +7,9 @@ import jax.numpy as jnp
 
 class SNN_ext(bst.nn.DynamicsGroup):
     def __init__(self, num_in, num_rec, num_out, exc_ratio=0.8,
-        tau_neu=10 * u.ms, tau_syn=100 * u.ms, tau_out=10 * u.ms,
-        ff_scale=1., rec_scale=1., E_exc=1.6 * u.mV, E_inh=-0.3 * u.mV,
-        i2r_prob=0.5, r2r_prob=0.5, r2o_prob=0.1, seed=42,):
-
+                 tau_neu=300 * u.ms, tau_syn=300 * u.ms, tau_out=300 * u.ms,
+                 ff_scale=1., rec_scale=1., E_exc=3. * u.mV, E_inh=-3. * u.mV,
+                 i2r_prob=0.5, r2r_prob=0.5, r2o_prob=0.1, seed=42, ):
         # 初始化父类DynamicsGroup
         super(SNN_ext, self).__init__()
 
@@ -37,7 +36,8 @@ class SNN_ext(bst.nn.DynamicsGroup):
 
         # 定义从输入层到递归层的连接（突触: i->r）
         # 使用Sequential将线性层和指数衰减层连接在一起
-        ff_init = bst.init.KaimingNormal(scale=7 * (1 - (u.math.exp(-bst.environ.get_dt(), unit_to_scale=u.ms))), unit=u.mA)
+        ff_init = bst.init.KaimingNormal(scale=7 * (1 - (u.math.exp(-bst.environ.get_dt(), unit_to_scale=u.ms))),
+                                         unit=u.mA)
         self.i2r = bst.nn.Sequential(
             # 线性层：用于将输入信号映射到递归层
             bst.nn.Linear(
@@ -84,23 +84,18 @@ class SNN_ext(bst.nn.DynamicsGroup):
         self.inh2r_coba = bst.nn.COBA(E_inh)
 
         # output
-        self.o = bst.nn.LIF(
+        self.o = bst.nn.Expon(
             num_out, tau=tau_out,
-            V_reset=0 * u.mV, V_rest=0 * u.mV, V_th=1 * u.mV,
-            spk_fun=bst.surrogate.ReluGrad()
+            g_initializer=bst.init.Constant(0.)
         )
 
         # recurrent to output
-        self.exc2o = bst.nn.Sequential(
-            bst.nn.Linear(
-                self.num_exc, self.num_out,
-                w_init=bst.init.KaimingNormal(scale=rec_scale, unit=u.mS),
-                b_init=bst.init.ZeroInit(unit=u.mS),
-                w_mask=self.exc2o_conn
-            ),
-            bst.nn.Expon(num_out, tau=tau_syn, g_initializer=bst.init.Constant(0. * u.mS)),
+        self.exc2o = bst.nn.Linear(
+            self.num_exc, self.num_out,
+            w_init=bst.init.KaimingNormal(scale=rec_scale),
+            # b_init=bst.init.ZeroInit(unit=u.mA),
+            w_mask=self.exc2o_conn
         )
-        self.exc2o_coba = bst.nn.COBA(E_exc)
 
     # update方法：用于执行网络的一次更新，返回输出层的输出
     def update(self, spike, ext_current):
@@ -109,32 +104,32 @@ class SNN_ext(bst.nn.DynamicsGroup):
         i2r_current = self.i2r(spike)
         exc2r_current = self.exc2r_coba.update(self.exc2r(e_sps), self.r.V.value)
         inh2r_current = self.inh2r_coba.update(self.inh2r(i_sps), self.r.V.value)
-        print(f'i2r_current: {i2r_current.mean().mantissa.primal}')
-        print(f'exc2r_current: {exc2r_current.mean().mantissa.primal}')
-        print(f'inh2r_current: {inh2r_current.mean().mantissa.primal}')
-
 
         r_current = i2r_current + exc2r_current + inh2r_current
         r_current = r_current.at[:, :self.num_exc].set(r_current[:, :self.num_exc] + ext_current)
-        print(f'r_current: {r_current.mean().mantissa.primal}')
         self.r(r_current)
 
-        o_current = self.exc2o_coba.update(self.exc2o(e_sps), self.o.V.value)
-        print(f'o_current: {o_current.mean().mantissa.primal}')
-        self.o(o_current)
+        o_current = self.exc2o(e_sps)
 
-        return self.o.get_spike()
+        return self.o(o_current)
 
     # predict方法：用于预测并获取递归层的膜电位值、脉冲输出和最终输出
-    # def predict(self, spike):
-    #     r2r_spike = self.r.get_spike()
-    #     current = self.i2r(spike) + self.r2r(r2r_spike)
-    #
-    #     # 计算递归层的脉冲输出
-    #     rec_spikes = self.r(current)
-    #
-    #     # 计算最终输出
-    #     out = self.o(self.r2o(rec_spikes))
-    #
-    #     # 返回递归层的膜电位值、递归层脉冲输出和最终输出
-    #     return self.r.V.value, rec_spikes, out
+    def predict(self, spike, ext_current):
+        rec_spikes = self.r.get_spike()
+        e_sps, i_sps = jnp.split(rec_spikes, [self.num_exc], axis=-1)
+
+        i2r_current = self.i2r(spike)
+        exc2r_current = self.exc2r_coba.update(self.exc2r(e_sps), self.r.V.value)
+        inh2r_current = self.inh2r_coba.update(self.inh2r(i_sps), self.r.V.value)
+
+        r_current = i2r_current + exc2r_current + inh2r_current
+        r_current = r_current.at[:, :self.num_exc].set(r_current[:, :self.num_exc] + ext_current)
+        self.r(r_current)
+
+        o_current = self.exc2o(e_sps)
+
+
+        out = self.o(o_current)
+
+        # 返回递归层的膜电位值、递归层脉冲输出和最终输出
+        return self.r.V.value, rec_spikes, out

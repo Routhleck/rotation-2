@@ -8,7 +8,8 @@ from jax.numpy import nan
 bst.random.seed(43)
 
 from model import SNN_ext
-from utils import data_generate_1212, current_generate, plot_voltage_traces
+from utils import (data_generate_1212, current_generate,
+                   plot_data, predict_and_visualize_net_activity)
 
 num_inputs = 20
 num_hidden = 100
@@ -22,40 +23,32 @@ delay = int((1000 * u.ms).to_decimal(time_step.unit))
 response = int((1000 * u.ms).to_decimal(time_step.unit))
 
 num_steps = stimulate + delay + response
-freq = 500 * u.Hz
+freq = 300 * u.Hz
 
-batch_size = 1
-epoch = 20000
+batch_size = 8
+epoch = 40
 
 net = SNN_ext(num_inputs, num_hidden, num_outputs)
 
 x_data, y_data = data_generate_1212(batch_size, num_steps, net, stimulate, delay, freq)
-current = current_generate(batch_size, num_steps, stimulate, delay, 0.0 * u.mA, 30.0 * u.mA)
+current = current_generate(batch_size, num_steps, stimulate, delay, 5.0 * u.mA, 10.0 * u.mA)
 
 optimizer = bst.optim.Adam(lr=3e-3, beta1=0.9, beta2=0.999)
 optimizer.register_trainable_weights(net.states(bst.ParamState))
 
+# plot_data(x_data)
+
 # total_count_state = bst.State(jnp.zeros((batch_size, num_outputs)))
 
 def loss_fn():
-    # spks = bst.compile.for_loop(net.update, x_data, current)
+    predictions = bst.compile.for_loop(net.update, x_data, current)
 
-    for _x_data, _current in zip(x_data, current):
-        spks = net.update(_x_data, _current)
+    # for _x_data, _current in zip(x_data, current):
+    #     spks = net.update(_x_data, _current)
 
-    spks_count = u.math.sum(spks[stimulate + delay:], axis=0)
+    predictions = predictions[stimulate + delay:]
 
-    total_count = u.math.sum(spks_count, axis=1)
-
-    predictions = spks_count / total_count[:, u.math.newaxis]
-
-    # plot_voltage_traces(outs, y_data)
-
-    # print(predictions)
-    for prediction in predictions.primal:
-        for _ in prediction:
-            if jnp.isnan(_):
-                return 100.
+    predictions = u.math.mean(predictions, axis=0)
 
     return bts.metric.softmax_cross_entropy_with_integer_labels(predictions, y_data).mean()
 
@@ -76,3 +69,5 @@ if __name__ == "__main__":
         train_losses.append(loss)
         # if i % 10 == 0:
         print(f"Epoch {i}, Loss: {loss}")
+
+    predict_and_visualize_net_activity(net, batch_size, x_data, y_data, current)

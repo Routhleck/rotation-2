@@ -2,6 +2,8 @@ import brainstate as bst
 import brainunit as u
 import seaborn as sns
 from matplotlib import pyplot as plt
+import numpy as np
+import braintools as bts
 
 
 def current_generate(batch_size, num_steps, stimulate, delay, common_volt, go_cue_volt):
@@ -74,7 +76,8 @@ def plot_data(x_data):
 
         plt.show()
 
-def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, show=True):
+def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, show=True,
+                        stimulate=500, delay=1000):
     fig, gs = bts.visualize.get_figure(*dim, 3, 3)
     if spk is not None:
         mem[spk > 0.0] = spike_height
@@ -93,3 +96,22 @@ def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, 
         ax.set_title(f"Neuron {i}, True class: {y_data[i]}") if y_data is not None else ax.set_title(f"Neuron {i}")
     if show:
         plt.show()
+
+def get_model_predict(output):
+    m = u.math.max(output, axis=0)  # 获取最大值
+    am = u.math.argmax(m, axis=1)  # 获取最大值的索引
+    return am
+
+def print_classification_accuracy(output, target):
+    """一个简易的小工具函数，用于计算分类准确率"""
+    # m = u.math.max(output, axis=0)  # 获取最大值
+    am = get_model_predict(output)  # 获取最大值的索引
+    acc = u.math.mean(target == am)  # 与目标值比较
+    print("准确率 %.3f" % acc)
+
+def predict_and_visualize_net_activity(net, batch_size, x_data, y_data, ext_current):
+    bst.nn.init_all_states(net, batch_size=batch_size)
+    vs, spikes, outs = bst.compile.for_loop(net.predict, x_data, ext_current, pbar=bst.compile.ProgressBar(10))
+    plot_voltage_traces(vs, spk=spikes, spike_height=5 * u.mV, show=False)
+    plot_voltage_traces(outs, y_data)
+    print_classification_accuracy(outs, y_data)
