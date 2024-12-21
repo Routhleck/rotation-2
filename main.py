@@ -3,13 +3,14 @@ import braintools as bts
 import brainunit as u
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax.numpy import nan
 
 bst.random.seed(43)
 
 from model import SNN_ext
 from utils import (data_generate_1221, current_generate,
-                   plot_data, predict_and_visualize_net_activity,
+                   plot_data, plot_current, predict_and_visualize_net_activity,
                    cal_model_accuracy, plot_accuracy, plot_loss)
 from loss import communicability_loss
 
@@ -40,7 +41,7 @@ current = current_generate(batch_size, num_steps, stimulate, delay, common_curre
 optimizer = bst.optim.Adam(lr=1e-3, beta1=0.9, beta2=0.999)
 optimizer.register_trainable_weights(net.states(bst.ParamState))
 
-plot_data(x_data)
+plot_current(current)
 
 # total_count_state = bst.State(jnp.zeros((batch_size, num_outputs)))
 
@@ -50,6 +51,7 @@ def loss_fn():
 
     weight_matrix = net.get_weight_matrix()
 
+    delays = predictions[:stimulate + delay]
     predictions = predictions[stimulate + delay:]
     delay_rec_spikes = rec_spikes[:stimulate + delay]
 
@@ -58,10 +60,12 @@ def loss_fn():
     ce = bts.metric.softmax_cross_entropy_with_integer_labels(predictions, y_data).mean()
     communicability = communicability_loss(weight_matrix, comms_factor=1)
     activity = delay_rec_spikes.mean()
+    delay_activity_loss = u.math.mean(u.math.abs(delays[:, :, 0]) + u.math.abs(delays[:, :, 1]))
 
-    activity_penalty = 0.0005 * (activity ** 2)
+    activity_penalty = 1000 * (activity ** 2)
+    delay_activity_penalty = 0.01 * (delay_activity_loss ** 2)
 
-    return ce + 0.001 * communicability + activity_penalty
+    return ce + 0.001 * communicability + activity_penalty + delay_activity_penalty
 
 
 # @bst.compile.jit
@@ -89,3 +93,9 @@ if __name__ == "__main__":
     plot_accuracy(accuracies)
     plot_loss(train_losses)
     predict_and_visualize_net_activity(net, batch_size, x_data, y_data, current)
+
+    # save weight_matrix and conn_matrix
+    r2r_conn = net.r2r_conn
+    r2r_weight = net.get_weight_matrix()
+
+    np.savez("conn_weight.npz", r2r_conn=r2r_conn, r2r_weight=r2r_weight)

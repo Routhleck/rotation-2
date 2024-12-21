@@ -17,6 +17,12 @@ def current_generate(batch_size, num_steps, stimulate, delay, common_volt, go_cu
 
     return current
 
+def plot_current(current):
+    plt.plot(current[:, 0, 0])
+    plt.xlabel("Time (ms)")
+    plt.ylabel("Current (mA)")
+    plt.title("Current vs Time")
+    plt.show()
 
 def data_generate_1212(batch_size, num_steps, net, stimulate, delay, freq):
     y_data = u.math.asarray(bst.random.rand(batch_size) < 0.5, dtype=int)
