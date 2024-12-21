@@ -4,6 +4,7 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 import numpy as np
 import braintools as bts
+import jax.numpy as jnp
 
 
 def current_generate(batch_size, num_steps, stimulate, delay, common_volt, go_cue_volt):
@@ -28,13 +29,39 @@ def data_generate_1212(batch_size, num_steps, net, stimulate, delay, freq):
                 bst.random.rand(stimulate, middle_index) < freq * bst.environ.get_dt())
             x_data = x_data.at[:stimulate, i, middle_index:net.num_in].set(
                 bst.random.rand(stimulate,
-                                net.num_in - middle_index) < 0.5 * freq * bst.environ.get_dt())
+                                net.num_in - middle_index) < 0.7 * freq * bst.environ.get_dt())
         else:
             x_data = x_data.at[:stimulate, i, :middle_index].set(
                 bst.random.rand(stimulate,
-                                net.num_in - middle_index) < 0.5 * freq * bst.environ.get_dt())
+                                net.num_in - middle_index) < 0.7 * freq * bst.environ.get_dt())
             x_data = x_data.at[:stimulate, i, middle_index:net.num_in].set(
                 bst.random.rand(stimulate, middle_index) < freq * bst.environ.get_dt())
+
+    return x_data, y_data
+
+
+def data_generate_1221(batch_size, num_steps, net, stimulate, delay, freq):
+    y_data = u.math.asarray(bst.random.rand(batch_size) < 0.5, dtype=int)
+    x_data = u.math.zeros((num_steps, batch_size, net.num_in))
+
+    middle_index = net.num_in // 2
+    for i in range(batch_size):
+        if y_data[i] == 1:
+            x_data = x_data.at[:stimulate, i, :middle_index].set(
+                bst.random.rand(stimulate, middle_index) < freq * bst.environ.get_dt())
+            x_data = x_data.at[:stimulate, i, middle_index:net.num_in].set(
+                bst.random.rand(stimulate,
+                                net.num_in - middle_index) < 0.6 * freq * bst.environ.get_dt())
+        else:
+            x_data = x_data.at[:stimulate, i, :middle_index].set(
+                bst.random.rand(stimulate,
+                                net.num_in - middle_index) < 0.6 * freq * bst.environ.get_dt())
+            x_data = x_data.at[:stimulate, i, middle_index:net.num_in].set(
+                bst.random.rand(stimulate, middle_index) < freq * bst.environ.get_dt())
+    # 增加噪声随机添加布尔值
+    noise_prob = 0.02
+    noise = bst.random.rand(num_steps, batch_size, net.num_in) < noise_prob
+    x_data = x_data.at[:, :, :].set(x_data.astype(jnp.int32) | noise)
 
     return x_data, y_data
 
@@ -69,12 +96,14 @@ def data_generate_1208(batch_size, num_steps, net, go_cue_inputs, stimulate, del
 def plot_data(x_data):
     for data_id in range(5):
         plt.clf()
-        plt.imshow(x_data.swapaxes(0, 1)[data_id].transpose(), cmap=plt.cm.gray_r, aspect="auto")
+        plt.imshow(x_data.swapaxes(0, 1)[data_id].transpose(), cmap=plt.cm.binary,
+                   interpolation='nearest', aspect="auto")
         plt.xlabel("Time (ms)")
         plt.ylabel("Unit")
         sns.despine()
 
         plt.show()
+
 
 def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, show=True,
                         stimulate=500, delay=1000):
@@ -97,17 +126,29 @@ def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, 
     if show:
         plt.show()
 
+
 def get_model_predict(output):
     m = u.math.max(output, axis=0)  # 获取最大值
     am = u.math.argmax(m, axis=1)  # 获取最大值的索引
     return am
 
-def print_classification_accuracy(output, target):
+
+def cal_model_accuracy(x_test, y_test, net, ext_current, stimulate=500, delay=1000):
+    vs, spikes, outs = bst.compile.for_loop(net.predict, x_test, ext_current)
+    outs = outs[stimulate + delay:]
+    am = get_model_predict(outs)  # 获取最大值的索引
+    acc = u.math.mean(y_test == am)
+    return acc
+
+
+def print_classification_accuracy(output, target, stimulate=500, delay=1000):
     """一个简易的小工具函数，用于计算分类准确率"""
     # m = u.math.max(output, axis=0)  # 获取最大值
+    output = output[stimulate + delay:]
     am = get_model_predict(output)  # 获取最大值的索引
     acc = u.math.mean(target == am)  # 与目标值比较
     print("准确率 %.3f" % acc)
+
 
 def predict_and_visualize_net_activity(net, batch_size, x_data, y_data, ext_current):
     bst.nn.init_all_states(net, batch_size=batch_size)
@@ -115,3 +156,23 @@ def predict_and_visualize_net_activity(net, batch_size, x_data, y_data, ext_curr
     plot_voltage_traces(vs, spk=spikes, spike_height=5 * u.mV, show=False)
     plot_voltage_traces(outs, y_data)
     print_classification_accuracy(outs, y_data)
+
+
+def plot_loss(train_losses):
+    plt.plot(np.asarray(jnp.asarray(train_losses)))
+    plt.xlabel("Epoch")
+    plt.ylabel("Training Loss")
+    plt.title("Training Loss vs Epoch")
+    plt.show()
+
+def moving_averge(data, window_size):
+    return jnp.convolve(data, np.ones(window_size)/window_size, mode='valid')
+
+def plot_accuracy(accuracies):
+    accuracies = jnp.asarray(accuracies)
+    smoothed_accuracies = moving_averge(accuracies, 10)
+    plt.plot(np.asarray(smoothed_accuracies))
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
+    plt.title("Accuracy vs Epoch")
+    plt.show()

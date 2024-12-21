@@ -99,6 +99,7 @@ class SNN_ext(bst.nn.DynamicsGroup):
 
     # update方法：用于执行网络的一次更新，返回输出层的输出
     def update(self, spike, ext_current):
+        rec_spikes = self.r.get_spike()
         e_sps, i_sps = jnp.split(self.r.get_spike(), [self.num_exc], axis=-1)
 
         i2r_current = self.i2r(spike)
@@ -111,7 +112,7 @@ class SNN_ext(bst.nn.DynamicsGroup):
 
         o_current = self.exc2o(e_sps)
 
-        return self.o(o_current)
+        return self.o(o_current), rec_spikes
 
     # predict方法：用于预测并获取递归层的膜电位值、脉冲输出和最终输出
     def predict(self, spike, ext_current):
@@ -133,3 +134,8 @@ class SNN_ext(bst.nn.DynamicsGroup):
 
         # 返回递归层的膜电位值、递归层脉冲输出和最终输出
         return self.r.V.value, rec_spikes, out
+
+    def get_weight_matrix(self):
+        exc2r_weight = self.exc2r.layers[0].weight.value['weight'].mantissa
+        inh2r_weight = self.inh2r.layers[0].weight.value['weight'].mantissa
+        return jnp.concatenate([exc2r_weight, inh2r_weight], axis=0)
