@@ -5,6 +5,9 @@ from matplotlib import pyplot as plt
 import numpy as np
 import braintools as bts
 import jax.numpy as jnp
+from scipy.stats import genextreme
+import networkx as nx
+import cpnet
 
 
 def current_generate(batch_size, num_steps, stimulate, delay, common_volt, go_cue_volt):
@@ -182,3 +185,50 @@ def plot_accuracy(accuracies):
     plt.ylabel("Accuracy")
     plt.title("Accuracy vs Epoch")
     plt.show()
+
+def get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn):
+    abs_non_nan_weight_matrixs = []
+    for weight_matrix in weight_matrixs:
+        weight_matrix = weight_matrix * r2r_conn
+        weight_matrix[weight_matrix == 0] = jnp.nan
+        weight_matrix = np.abs(weight_matrix)
+        abs_non_nan_weight_matrixs.append(weight_matrix[~np.isnan(weight_matrix)])
+    return abs_non_nan_weight_matrixs
+
+def plot_gevfit_shape(weight_matrixs, r2r_conn):
+    abs_non_nan_weight_matrixs = get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn)
+    shapes = []
+    for weight_matrix in abs_non_nan_weight_matrixs:
+        shape, loc, scale = genextreme.fit(weight_matrix)
+        shapes.append(shape)
+    # plot shape
+    plt.plot(shapes)
+    plt.xlabel("Epoch")
+    plt.ylabel("GEV Shape")
+    plt.title("Shape vs Epoch")
+    plt.show()
+
+def plot_q_coreness(weight_matrixs, r2r_conn):
+    # abs_non_nan_weight_matrixs = get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn)
+    q_coreness = []
+
+    num_nodes = r2r_conn.shape[0]
+    for weight_matrix in weight_matrixs:
+        G = nx.DiGraph()
+        G.add_nodes_from(range(num_nodes))
+        for i in range(num_nodes):
+            for j in range(num_nodes):
+                if r2r_conn[i, j]:
+                    G.add_edge(i, j, weight=np.abs(weight_matrix[i, j]))
+        alg = cpnet.Rossa()
+        alg.detect(G)
+        q_coreness.append(alg.Q_)
+
+    # plot q_coreness
+    plt.plot(q_coreness)
+    plt.xlabel("Epoch")
+    plt.ylabel("Q Coreness")
+    plt.title("Q Coreness vs Epoch")
+    plt.show()
+
+

@@ -112,7 +112,7 @@ class SNN_ext(bst.nn.DynamicsGroup):
 
         o_current = self.exc2o(e_sps)
 
-        return self.o(o_current), rec_spikes
+        return self.o(o_current), self.r.V.value.mantissa
 
     # predict方法：用于预测并获取递归层的膜电位值、脉冲输出和最终输出
     def predict(self, spike, ext_current):
