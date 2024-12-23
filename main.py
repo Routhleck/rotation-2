@@ -48,6 +48,9 @@ optimizer.register_trainable_weights(net.states(bst.ParamState))
 def loss_fn():
     # random select batch_size samples
     predictions, r_V = bst.compile.for_loop(net.update, x_data, current)
+    # for _x_data, _current in zip(x_data, current):
+    #     predictions, r_V = net.update(_x_data, _current)
+
 
     weight_matrix = net.get_weight_matrix()
 
@@ -59,7 +62,7 @@ def loss_fn():
 
     ce = bts.metric.softmax_cross_entropy_with_integer_labels(predictions, y_data).mean()
     communicability = communicability_loss(weight_matrix, comms_factor=1)
-    activity = r_V.mean()
+    activity = (r_V.mean(axis=(0,1)) * net.r2r_conn).sum() / net.r2r_conn.sum()
     # delay_activity_loss = u.math.mean(u.math.abs(delays[:, :, 0]) + u.math.abs(delays[:, :, 1]))
 
     activity_penalty = 0.5 * activity
@@ -71,25 +74,30 @@ def loss_fn():
 @bst.compile.jit
 def train_fn():
     bst.nn.init_all_states(net, batch_size=batch_size)
+    net.start_spike_count()
     grads, l = bst.augment.grad(loss_fn, net.states(bst.ParamState), return_value=True)()
 
     acc = cal_model_accuracy(x_data, y_data, net, current, stimulate, delay)
 
     optimizer.update(grads)
-    return l, acc, net.get_weight_matrix()
+    # 权重最小为0
+    net.set_weight_matrix(jnp.clip(net.get_weight_matrix(), 0, None))
+    return l, acc, net.get_weight_matrix(), net.get_spike_counts()
 
 
 if __name__ == "__main__":
     train_losses = []
     accuracies = []
     weight_matrixs = []
+    spike_counts = []
     for i in range(1, epoch + 1):
-        loss, accuracy, weight_matrix = train_fn()
+        loss, accuracy, weight_matrix, spike_count = train_fn()
         train_losses.append(loss)
         accuracies.append(accuracy)
         weight_matrixs.append(np.asarray(weight_matrix))
+        spike_counts.append(np.asarray(spike_count))
         # if i % 10 == 0:
-        print(f"Epoch {i}, Loss: {loss}, Accuracy: {accuracy}")
+        print(f"Epoch {i}, Loss: {loss}, Accuracy: {accuracy}, Activity: {spike_count.sum()}")
 
     plot_accuracy(accuracies)
     plot_loss(train_losses)
@@ -102,4 +110,4 @@ if __name__ == "__main__":
     plot_q_coreness(weight_matrixs, r2r_conn)
 
     # save weight_matrix and conn_matrix
-    # np.savez("conn_weight.npz", r2r_conn=r2r_conn, r2r_weight=r2r_weight)
+    np.savez("conn_weight.npz", r2r_conn=r2r_conn, r2r_weights=weight_matrixs, spike_counts=spike_counts)

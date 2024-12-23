@@ -9,7 +9,8 @@ class SNN_ext(bst.nn.DynamicsGroup):
     def __init__(self, num_in, num_rec, num_out, exc_ratio=0.8,
                  tau_neu=300 * u.ms, tau_syn=300 * u.ms, tau_out=300 * u.ms,
                  ff_scale=1., rec_scale=1., E_exc=3. * u.mV, E_inh=-3. * u.mV,
-                 i2r_prob=0.5, r2r_prob=0.5, r2o_prob=0.1, seed=42, ):
+                 i2r_prob=0.5, r2r_prob=0.2, r2o_prob=0.1, seed=42,
+                 spike_count_num=25, batch_size=40, window_size=100):
         # 初始化父类DynamicsGroup
         super(SNN_ext, self).__init__()
 
@@ -33,6 +34,15 @@ class SNN_ext(bst.nn.DynamicsGroup):
         self.inh2r_conn = self.r2r_conn[self.num_exc:, :]
         self.exc2o_conn = self.r2o_conn[:self.num_exc, :]
         self.inh2o_conn = self.r2o_conn[self.num_exc:, :]
+
+        # get spike counts
+        self.spike_count_num = spike_count_num
+        self.batch_size = batch_size
+        self.window_size = window_size
+        self.spike_counts = bst.State(jnp.zeros((self.spike_count_num, self.batch_size, self.num_rec)))
+        self.temp_spike = bst.State(jnp.zeros((self.window_size, self.batch_size, self.num_rec)))
+        self.temp_i = bst.State(0)
+        self.spike_count_i = bst.State(0)
 
         # 定义从输入层到递归层的连接（突触: i->r）
         # 使用Sequential将线性层和指数衰减层连接在一起
@@ -64,7 +74,7 @@ class SNN_ext(bst.nn.DynamicsGroup):
         self.exc2r = bst.nn.Sequential(
             bst.nn.Linear(
                 self.num_exc, self.num_rec,
-                w_init=bst.init.KaimingNormal(scale=rec_scale, unit=u.mS),
+                w_init=bst.init._random_inits.Gamma(shape=0.5, scale=0.1, unit=u.mS),
                 b_init=bst.init.ZeroInit(unit=u.mS),
                 w_mask=self.exc2r_conn
             ),
@@ -75,7 +85,7 @@ class SNN_ext(bst.nn.DynamicsGroup):
         self.inh2r = bst.nn.Sequential(
             bst.nn.Linear(
                 self.num_inh, self.num_rec,
-                w_init=bst.init.KaimingNormal(scale=rec_scale, unit=u.mS),
+                w_init=bst.init._random_inits.Gamma(shape=0.5, scale=0.1, unit=u.mS),
                 b_init=bst.init.ZeroInit(unit=u.mS),
                 w_mask=self.inh2r_conn
             ),
@@ -100,7 +110,10 @@ class SNN_ext(bst.nn.DynamicsGroup):
     # update方法：用于执行网络的一次更新，返回输出层的输出
     def update(self, spike, ext_current):
         rec_spikes = self.r.get_spike()
-        e_sps, i_sps = jnp.split(self.r.get_spike(), [self.num_exc], axis=-1)
+        e_sps, i_sps = jnp.split(rec_spikes, [self.num_exc], axis=-1)
+
+        # print(f'rec_spikes: {rec_spikes.sum()}')
+        self.update_spike_count(rec_spikes)
 
         i2r_current = self.i2r(spike)
         exc2r_current = self.exc2r_coba.update(self.exc2r(e_sps), self.r.V.value)
@@ -118,6 +131,8 @@ class SNN_ext(bst.nn.DynamicsGroup):
     def predict(self, spike, ext_current):
         rec_spikes = self.r.get_spike()
         e_sps, i_sps = jnp.split(rec_spikes, [self.num_exc], axis=-1)
+
+        self.update_spike_count(rec_spikes)
 
         i2r_current = self.i2r(spike)
         exc2r_current = self.exc2r_coba.update(self.exc2r(e_sps), self.r.V.value)
@@ -139,3 +154,34 @@ class SNN_ext(bst.nn.DynamicsGroup):
         exc2r_weight = self.exc2r.layers[0].weight.value['weight'].mantissa
         inh2r_weight = self.inh2r.layers[0].weight.value['weight'].mantissa
         return jnp.concatenate([exc2r_weight, inh2r_weight], axis=0)
+
+    def set_weight_matrix(self, r2r_weight):
+        exc2r_weight = r2r_weight[:self.num_exc]
+        inh2r_weight = r2r_weight[self.num_exc:]
+        self.exc2r.layers[0].weight.value['weight'] = exc2r_weight * u.mS
+        self.inh2r.layers[0].weight.value['weight'] = inh2r_weight * u.mS
+
+    def start_spike_count(self):
+        self.spike_counts.value = jnp.zeros((self.spike_count_num, self.batch_size, self.num_rec))
+        self.temp_spike.value = jnp.zeros((self.window_size, self.batch_size, self.num_rec))
+        self.temp_i.value = 0
+        self.spike_count_i.value = 0
+
+    def update_spike_count(self, spike):
+        self.temp_spike.value = self.temp_spike.value.at[self.temp_i.value].set(spike)
+        self.temp_i.value = self.temp_i.value + 1
+        # jax.debug.print(f'temp_i: {self.temp_i}')
+        bst.compile.cond(self.temp_i.value == self.window_size - 1, self.update_spike_count_i, lambda: None)
+        # if self.temp_i.value == (self.window_size - 1):
+        #     self.temp_i.value = 0
+        #     jax.debug.print(f'spike_count_i: {self.spike_count_i}')
+        #     self.spike_counts.value = self.spike_counts.value.at[self.spike_count_i.value].set(self.temp_spike.value.sum(axis=0))
+
+    def update_spike_count_i(self):
+        self.temp_i.value = 0
+        # jax.debug.print(f'spike_count_i: {self.spike_count_i}')
+        self.spike_counts.value = self.spike_counts.value.at[self.spike_count_i.value].set(self.temp_spike.value.sum(axis=0))
+        self.spike_count_i.value = self.spike_count_i.value + 1
+
+    def get_spike_counts(self):
+        return self.spike_counts.value
