@@ -62,13 +62,12 @@ def loss_fn():
 
     ce = bts.metric.softmax_cross_entropy_with_integer_labels(predictions, y_data).mean()
     communicability = communicability_loss(weight_matrix, comms_factor=1)
-    activity = (r_V.mean(axis=(0,1)) * net.r2r_conn).sum() / net.r2r_conn.sum()
+    activity = (r_V.mean(axis=(0,1)) * net.r2r_conn * weight_matrix).sum() / net.r2r_conn.sum()
     # delay_activity_loss = u.math.mean(u.math.abs(delays[:, :, 0]) + u.math.abs(delays[:, :, 1]))
 
-    activity_penalty = 0.5 * activity
     # delay_activity_penalty = 0.01 * (delay_activity_loss ** 2)
 
-    return ce + 0.1 * communicability + activity_penalty
+    return ce + 1. * communicability + 1. * activity
 
 
 @bst.compile.jit
@@ -95,7 +94,7 @@ if __name__ == "__main__":
         train_losses.append(loss)
         accuracies.append(accuracy)
         weight_matrixs.append(np.asarray(weight_matrix))
-        spike_counts.append(np.asarray(spike_count))
+        spike_counts.append(np.swapaxes(np.asarray(spike_count), 0, 1))
         # if i % 10 == 0:
         print(f"Epoch {i}, Loss: {loss}, Accuracy: {accuracy}, Activity: {spike_count.sum()}")
 
