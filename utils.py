@@ -1,3 +1,5 @@
+import os
+
 import brainstate as bst
 import brainunit as u
 import seaborn as sns
@@ -5,10 +7,11 @@ from matplotlib import pyplot as plt
 import numpy as np
 import braintools as bts
 import jax.numpy as jnp
-from scipy.stats import genextreme
+from scipy.stats import genextreme, gamma
 import networkx as nx
 import cpnet
-
+from networkx.algorithms.community import kernighan_lin_bisection as kl
+import matlab.engine
 
 def current_generate(batch_size, num_steps, stimulate, delay, common_volt, go_cue_volt):
     current = u.math.zeros((num_steps, batch_size, 1)) * u.mA
@@ -147,7 +150,7 @@ def cal_model_accuracy(x_test, y_test, net, ext_current, stimulate=500, delay=10
     outs = outs[stimulate + delay:]
     am = get_model_predict(outs)  # 获取最大值的索引
     acc = u.math.mean(y_test == am)
-    return acc
+    return acc, am
 
 
 def print_classification_accuracy(output, target, stimulate=500, delay=1000):
@@ -208,21 +211,56 @@ def plot_gevfit_shape(weight_matrixs, r2r_conn):
     plt.title("Shape vs Epoch")
     plt.show()
 
+def plot_gamfit_alpha_beta(weight_matrixs, r2r_conn):
+    abs_non_nan_weight_matrixs = get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn)
+    alphas = []
+    betas = []
+    for weight_matrix in abs_non_nan_weight_matrixs:
+        alpha, loc, beta = gamma.fit(weight_matrix)
+        alphas.append(alpha)
+        betas.append(beta)
+    # plot alpha
+    plt.plot(alphas)
+    plt.xlabel("Epoch")
+    plt.ylabel("Gamma Alpha")
+    plt.title("Alpha vs Epoch")
+    plt.show()
+    # plot beta
+    plt.plot(betas)
+    plt.xlabel("Epoch")
+    plt.ylabel("Gamma Beta")
+    plt.title("Beta vs Epoch")
+    plt.show()
+
+    x = np.linspace(0.01, 10, 1000)
+    plt.figure(figsize=(10, 6))
+
+    alphas = alphas[-10:]
+
+    for i, (alpha, beta) in enumerate(zip(alphas, betas)):
+        pdf = gamma.pdf(x, alpha, scale=beta)
+
+        plt.loglog(x, pdf, label=f'Epoch {len(weight_matrixs) - 10 + i+1}')
+
+    plt.title('Log-log plot of Gamma distribution')
+    plt.xlabel('Log of value')
+    plt.ylabel('Log of Probability Density')
+    plt.legend()
+    plt.grid(True, which='both', ls="--")
+    plt.show()
+
+
 def plot_q_coreness(weight_matrixs, r2r_conn):
     # abs_non_nan_weight_matrixs = get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn)
+    eng = matlab.engine.start_matlab()
+    eng.addpath(os.path.dirname(__file__))
+
     q_coreness = []
 
-    num_nodes = r2r_conn.shape[0]
     for weight_matrix in weight_matrixs:
-        G = nx.DiGraph()
-        G.add_nodes_from(range(num_nodes))
-        for i in range(num_nodes):
-            for j in range(num_nodes):
-                if r2r_conn[i, j]:
-                    G.add_edge(i, j, weight=np.abs(weight_matrix[i, j]))
-        alg = cpnet.Rossa()
-        alg.detect(G)
-        q_coreness.append(alg.Q_)
+        C, q = eng.core_periphery_dir(weight_matrix, nargout=2)
+
+        q_coreness.append(q)
 
     # plot q_coreness
     plt.plot(q_coreness)
@@ -231,4 +269,6 @@ def plot_q_coreness(weight_matrixs, r2r_conn):
     plt.title("Q Coreness vs Epoch")
     plt.show()
 
+def plot_weight_prob_log(weight_matrixs, r2r_conn):
+    abs_non_nan_weight_matrixs = get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn)
 
