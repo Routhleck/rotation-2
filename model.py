@@ -144,7 +144,6 @@ class SNN_ext(bst.nn.DynamicsGroup):
 
         o_current = self.exc2o(e_sps)
 
-
         out = self.o(o_current)
 
         # 返回递归层的膜电位值、递归层脉冲输出和最终输出
@@ -180,7 +179,8 @@ class SNN_ext(bst.nn.DynamicsGroup):
     def update_spike_count_i(self):
         self.temp_i.value = 0
         # jax.debug.print(f'spike_count_i: {self.spike_count_i}')
-        self.spike_counts.value = self.spike_counts.value.at[self.spike_count_i.value].set(self.temp_spike.value.sum(axis=0))
+        self.spike_counts.value = self.spike_counts.value.at[self.spike_count_i.value].set(
+            self.temp_spike.value.sum(axis=0))
         self.spike_count_i.value = self.spike_count_i.value + 1
 
     def get_spike_counts(self):

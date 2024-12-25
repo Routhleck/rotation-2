@@ -12,6 +12,8 @@ import networkx as nx
 import cpnet
 from networkx.algorithms.community import kernighan_lin_bisection as kl
 import matlab.engine
+from tqdm import tqdm
+
 
 def current_generate(batch_size, num_steps, stimulate, delay, common_volt, go_cue_volt):
     current = u.math.zeros((num_steps, batch_size, 1)) * u.mA
@@ -23,12 +25,14 @@ def current_generate(batch_size, num_steps, stimulate, delay, common_volt, go_cu
 
     return current
 
+
 def plot_current(current):
     plt.plot(current[:, 0, 0])
     plt.xlabel("Time (ms)")
     plt.ylabel("Current (mA)")
     plt.title("Current vs Time")
     plt.show()
+
 
 def data_generate_1212(batch_size, num_steps, net, stimulate, delay, freq):
     y_data = u.math.asarray(bst.random.rand(batch_size) < 0.5, dtype=int)
@@ -177,8 +181,10 @@ def plot_loss(train_losses):
     plt.title("Training Loss vs Epoch")
     plt.show()
 
+
 def moving_averge(data, window_size):
-    return jnp.convolve(data, np.ones(window_size)/window_size, mode='valid')
+    return jnp.convolve(data, np.ones(window_size) / window_size, mode='valid')
+
 
 def plot_accuracy(accuracies):
     accuracies = jnp.asarray(accuracies)
@@ -189,6 +195,7 @@ def plot_accuracy(accuracies):
     plt.title("Accuracy vs Epoch")
     plt.show()
 
+
 def get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn):
     abs_non_nan_weight_matrixs = []
     for weight_matrix in weight_matrixs:
@@ -197,6 +204,7 @@ def get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn):
         weight_matrix = np.abs(weight_matrix)
         abs_non_nan_weight_matrixs.append(weight_matrix[~np.isnan(weight_matrix)])
     return abs_non_nan_weight_matrixs
+
 
 def plot_gevfit_shape(weight_matrixs, r2r_conn):
     abs_non_nan_weight_matrixs = get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn)
@@ -210,6 +218,7 @@ def plot_gevfit_shape(weight_matrixs, r2r_conn):
     plt.ylabel("GEV Shape")
     plt.title("Shape vs Epoch")
     plt.show()
+
 
 def plot_gamfit_alpha_beta(weight_matrixs, r2r_conn):
     abs_non_nan_weight_matrixs = get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn)
@@ -240,7 +249,7 @@ def plot_gamfit_alpha_beta(weight_matrixs, r2r_conn):
     for i, (alpha, beta) in enumerate(zip(alphas, betas)):
         pdf = gamma.pdf(x, alpha, scale=beta)
 
-        plt.loglog(x, pdf, label=f'Epoch {len(weight_matrixs) - 10 + i+1}')
+        plt.loglog(x, pdf, label=f'Epoch {len(weight_matrixs) - 10 + i + 1}')
 
     plt.title('Log-log plot of Gamma distribution')
     plt.xlabel('Log of value')
@@ -256,11 +265,13 @@ def plot_q_coreness(weight_matrixs, r2r_conn):
     eng.addpath(os.path.dirname(__file__))
 
     q_coreness = []
+    C_list = []
 
     for weight_matrix in weight_matrixs:
         C, q = eng.core_periphery_dir(weight_matrix, nargout=2)
 
         q_coreness.append(q)
+        C_list.append(C)
 
     # plot q_coreness
     plt.plot(q_coreness)
@@ -269,6 +280,118 @@ def plot_q_coreness(weight_matrixs, r2r_conn):
     plt.title("Q Coreness vs Epoch")
     plt.show()
 
-def plot_weight_prob_log(weight_matrixs, r2r_conn):
-    abs_non_nan_weight_matrixs = get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn)
+    return C_list, q_coreness
 
+
+def calculate_pev(spike_counts, model_predicts, plot_num=4):
+    eng = matlab.engine.start_matlab()
+    eng.addpath(os.path.dirname(__file__))
+    # return len=4 list[array shape = (4000, 25, 100)]
+    epoch = spike_counts.shape[0]
+    batch_size = spike_counts.shape[1]
+    frame = spike_counts.shape[2]
+    num_rec = spike_counts.shape[3]
+    trails = epoch * batch_size
+
+    spike_counts = spike_counts.reshape(spike_counts.shape[0] * spike_counts.shape[1], spike_counts.shape[2],
+                                        spike_counts.shape[3])
+    model_predicts = model_predicts.reshape(model_predicts.shape[0] * model_predicts.shape[1])
+    pev_list = []
+
+    # spike_counts = np.ascontiguousarray(spike_counts)
+    # C = np.ascontiguousarray(C)
+    for i in range(plot_num):
+        spike_count = spike_counts[trails // plot_num * i: trails // plot_num * (i + 1)]
+        model_predict = model_predicts[trails // plot_num * i: trails // plot_num * (i + 1)]
+        pev_array = np.zeros((frame, num_rec))
+        for j in tqdm(range(frame)):
+            for k in range(num_rec):
+                spike_count_contiguous = np.ascontiguousarray(spike_count[:, j, k])
+                model_predict = np.ascontiguousarray(model_predict)
+                pev_array[j, k] = eng.calculate_PEV(spike_count_contiguous, model_predict)
+        pev_list.append(pev_array)
+    return pev_list
+
+
+def calculate_mse(data, axis=0):
+    mean = np.mean(data, axis=axis)
+
+    # 扩展 mean 的形状以匹配 data 的形状
+    if axis == 0:
+        mean = mean[np.newaxis, :]  # 将 mean 的形状从 (48,) 扩展为 (1, 48)
+    elif axis == 1:
+        mean = mean[:, np.newaxis]  # 将 mean 的形状从 (25,) 扩展为 (25, 1)
+
+    mse = np.mean((data - mean) ** 2, axis=axis)
+    return mse
+
+
+def plot_spike_count(spike_counts, C, model_predict, plot_num=4):
+    core = C == 1
+    periphery = C == 0
+    pev_list = calculate_pev(spike_counts, model_predict, plot_num)
+
+    fig, axs = plt.subplots(2, plot_num, figsize=(20, 10))
+
+    # 找到所有 pev_list 中的最小值和最大值，用于统一 colorbar 的范围
+    vmin = min(np.min(pev) for pev in pev_list)
+    vmax = max(np.max(pev) for pev in pev_list)
+
+    # 统一 y 轴范围
+    y_min = np.inf
+    y_max = -np.inf
+
+    epoch = spike_counts.shape[0]
+    for i in range(plot_num):
+        # 绘制热图
+        im = axs[0, i].imshow(pev_list[i].transpose(), cmap='viridis', interpolation='nearest',
+                              aspect='auto', vmin=vmin, vmax=vmax)
+        axs[0, i].set_xlabel("Frame")
+        axs[0, i].set_ylabel("Neuron Index")
+        axs[0, i].set_title(f"Stage {i + 1}")
+
+        # 计算 core 和 periphery 的 spike count 的均值、最大值和最小值
+        core_spike_count_mean = np.mean(pev_list[i][:, core[epoch % plot_num * i]], axis=1)
+        periphery_spike_count_mean = np.mean(pev_list[i][:, periphery[epoch % plot_num * i]], axis=1)
+
+        core_spike_count_mse = calculate_mse(pev_list[i][:, core[epoch % plot_num * i]], axis=1)
+        periphery_spike_count_mse = calculate_mse(pev_list[i][:, periphery[epoch % plot_num * i]], axis=1)
+
+        # 绘制均值线
+        axs[1, i].plot(core_spike_count_mean, color='red', label='Core Mean')
+        axs[1, i].plot(periphery_spike_count_mean, color='green', label='Periphery Mean')
+
+        # 绘制 error bar（使用 MSE 作为误差范围）
+        # axs[1, i].errorbar(range(len(core_spike_count_mean)), core_spike_count_mean, yerr=core_spike_count_mse,
+        #                    color='red', fmt='none', capsize=5, label='Core MSE')
+        # axs[1, i].errorbar(range(len(periphery_spike_count_mean)), periphery_spike_count_mean,
+        #                    yerr=periphery_spike_count_mse,
+        #                    color='green', fmt='none', capsize=5, label='Periphery MSE')
+        axs[1, i].fill_between(range(len(core_spike_count_mean)), core_spike_count_mean - core_spike_count_mse,
+                               core_spike_count_mean + core_spike_count_mse, color='red', alpha=0.3)
+        axs[1, i].fill_between(range(len(periphery_spike_count_mean)),
+                               periphery_spike_count_mean - periphery_spike_count_mse,
+                               periphery_spike_count_mean + periphery_spike_count_mse, color='green', alpha=0.3)
+
+        # 设置统一的 y 轴范围
+        y_min = min(y_min, np.min(core_spike_count_mean - core_spike_count_mse),
+                    np.min(periphery_spike_count_mean - periphery_spike_count_mse))
+        y_max = max(y_max, np.max(core_spike_count_mean + core_spike_count_mse),
+                    np.max(periphery_spike_count_mean + periphery_spike_count_mse))
+
+        # 添加图例和标签
+        axs[1, i].legend()
+        axs[1, i].set_xlabel('Frame')
+        axs[1, i].set_ylabel('PEV')
+        axs[1, i].set_title(f'Stage {i + 1}')
+
+    cbar_ax = fig.add_axes([0.92, 0.55, 0.02, 0.35])  # 调整 colorbar 的位置和大小
+    fig.colorbar(im, cax=cbar_ax)
+
+    for i in range(plot_num):
+        axs[1, i].set_ylim(y_min, y_max)
+
+    # plt.tight_layout()
+    # 添加全局标题
+    plt.suptitle('PEV value and Core/Periphery PEV value', fontsize=16)
+    plt.show()
