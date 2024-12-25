@@ -8,3 +8,4 @@ tqdm
 numba
 cpnet
 networkx
+powerlaw

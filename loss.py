@@ -1,5 +1,6 @@
-import jax.numpy as jnp
 import jax
+import jax.numpy as jnp
+
 
 def communicability_loss(weight_matrix, comms_factor=1):
     """

@@ -8,7 +8,7 @@ import numpy as np
 bst.random.seed(43)
 
 from model import SNN_ext
-from utils import data_generate_1212, current_generate, plot_data
+from utils import data_generate_1212, current_generate
 
 num_inputs = 10
 num_hidden = 100
@@ -183,7 +183,7 @@ plt.show()
 
 predict_and_visualize_net_activity(net)
 
-from export import save_input, save_train_states
+from old.export import save_input, save_train_states
 
 states_dict = {
     'i2r_weight': i2r_weight,

@@ -1,17 +1,14 @@
 import os
 
 import brainstate as bst
+import braintools as bts
 import brainunit as u
+import jax.numpy as jnp
+import matlab.engine
+import numpy as np
 import seaborn as sns
 from matplotlib import pyplot as plt
-import numpy as np
-import braintools as bts
-import jax.numpy as jnp
-from scipy.stats import genextreme, gamma
-import networkx as nx
-import cpnet
-from networkx.algorithms.community import kernighan_lin_bisection as kl
-import matlab.engine
+from scipy.stats import gamma
 from tqdm import tqdm
 
 

@@ -1,8 +1,8 @@
 import brainstate as bst
+import braintools as bts
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
-import braintools as bts
 
 # 设置随机种子确保可重复性
 bst.random.seed(43)
@@ -117,16 +117,15 @@ if __name__ == "__main__":
         print(f"Epoch {i}, Loss: {loss}, Accuracy: {accuracy}, Activity: {spike_count.sum()}")
 
     # 绘制训练结果
-    plot_accuracy(accuracies)
-    plot_loss(train_losses)
-
     r2r_conn = np.asarray(net.r2r_conn)
-
-    # 分析网络特性
-    plot_gamfit_alpha_beta(weight_matrixs, r2r_conn)
     C_list, q_list = plot_q_coreness(weight_matrixs)
     spike_counts = np.asarray(spike_counts)
     C = np.asarray(C_list).reshape(epoch, num_hidden)
+
+    plot_accuracy(accuracies)
+    plot_loss(train_losses)
+    # predict_and_visualize_net_activity(net, batch_size, x_data, y_data, current)
+    plot_gamfit_alpha_beta(weight_matrixs, r2r_conn)
     plot_spike_count(spike_counts, C, np.asarray(model_predicts))
 
     # 保存结果

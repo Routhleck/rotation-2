@@ -3,7 +3,6 @@ import brainunit as u
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 import brainstate as bst
 
 from model import SNN
@@ -170,7 +169,7 @@ plt.show()
 
 predict_and_visualize_net_activity(net)
 
-from export import save_input, save_train_states
+from old.export import save_input, save_train_states
 
 states_dict = {
     # 'i2r_bias': i2r_bias,

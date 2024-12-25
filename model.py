@@ -1,6 +1,7 @@
-import brainunit as u
 import brainstate as bst
+import brainunit as u
 import jax.numpy as jnp
+
 
 class SNN_ext(bst.nn.DynamicsGroup):
     """
