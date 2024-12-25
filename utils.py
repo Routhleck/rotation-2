@@ -570,3 +570,26 @@ def plot_spike_count(spike_counts, C, model_predict, plot_num=4):
     # 添加全局标题
     plt.suptitle('PEV value and Core/Periphery PEV value', fontsize=16)
     plt.show()
+
+def plot_modularity(weight_matrixs):
+    """
+    绘制模块度随时间变化的图表。
+
+    参数:
+    weight_matrixs (list of ndarray): 包含多个权重矩阵的列表。
+    r2r_conn (ndarray): 用于计算非NaN权重矩阵的连接矩阵。
+
+    返回:
+    None
+    """
+    eng = matlab.engine.start_matlab()
+    eng.addpath(os.path.dirname(__file__))
+    modularity = []
+    for weight_matrix in weight_matrixs:
+        M, Q = eng.community_louvain(weight_matrix, 1., nargout=2)
+        modularity.append(Q)
+    plt.plot(modularity)
+    plt.xlabel("Epoch")
+    plt.ylabel("Modularity")
+    plt.title("Modularity vs Epoch")
+    plt.show()
