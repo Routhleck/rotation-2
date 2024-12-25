@@ -124,7 +124,7 @@ if __name__ == "__main__":
 
     # 分析网络特性
     plot_gamfit_alpha_beta(weight_matrixs, r2r_conn)
-    C_list, q_list = plot_q_coreness(weight_matrixs, r2r_conn)
+    C_list, q_list = plot_q_coreness(weight_matrixs)
     spike_counts = np.asarray(spike_counts)
     C = np.asarray(C_list).reshape(epoch, num_hidden)
     plot_spike_count(spike_counts, C, np.asarray(model_predicts))

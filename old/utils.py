@@ -16,20 +16,6 @@ from tqdm import tqdm
 
 
 def current_generate(batch_size, num_steps, stimulate, delay, common_volt, go_cue_volt):
-    """
-    生成给定批量大小和步数的电流信号。
-
-    参数:
-    batch_size (int): 批量大小。
-    num_steps (int): 信号的步数。
-    stimulate (int): 刺激期的持续时间。
-    delay (int): 刺激期开始前的延迟时间。
-    common_volt (float): 非刺激期的电压水平。
-    go_cue_volt (float): 刺激期的电压水平。
-
-    返回:
-    numpy.ndarray: 一个形状为 (num_steps, batch_size, 1) 的3D数组，表示生成的电流信号。
-    """
     current = u.math.zeros((num_steps, batch_size, 1)) * u.mA
     current[:stimulate + delay, :, :] = common_volt
     current[stimulate + delay:
@@ -41,15 +27,6 @@ def current_generate(batch_size, num_steps, stimulate, delay, common_volt, go_cu
 
 
 def plot_current(current):
-    """
-    绘制电流随时间变化的图表。
-
-    参数:
-    current (numpy.ndarray): 一个三维数组，表示电流数据。假设第一个维度是时间，第二个维度和第三个维度是空间维度。
-
-    返回:
-    None
-    """
     plt.plot(current[:, 0, 0])
     plt.xlabel("Time (ms)")
     plt.ylabel("Current (mA)")
@@ -57,23 +34,29 @@ def plot_current(current):
     plt.show()
 
 
+def data_generate_1212(batch_size, num_steps, net, stimulate, delay, freq):
+    y_data = u.math.asarray(bst.random.rand(batch_size) < 0.5, dtype=int)
+    x_data = u.math.zeros((num_steps, batch_size, net.num_in))
+
+    middle_index = net.num_in // 2
+    for i in range(batch_size):
+        if y_data[i] == 1:
+            x_data = x_data.at[:stimulate, i, :middle_index].set(
+                bst.random.rand(stimulate, middle_index) < freq * bst.environ.get_dt())
+            x_data = x_data.at[:stimulate, i, middle_index:net.num_in].set(
+                bst.random.rand(stimulate,
+                                net.num_in - middle_index) < 0.7 * freq * bst.environ.get_dt())
+        else:
+            x_data = x_data.at[:stimulate, i, :middle_index].set(
+                bst.random.rand(stimulate,
+                                net.num_in - middle_index) < 0.7 * freq * bst.environ.get_dt())
+            x_data = x_data.at[:stimulate, i, middle_index:net.num_in].set(
+                bst.random.rand(stimulate, middle_index) < freq * bst.environ.get_dt())
+
+    return x_data, y_data
+
+
 def data_generate_1221(batch_size, num_steps, net, stimulate, delay, freq):
-    """
-    生成用于神经网络训练的数据。
-
-    参数:
-    batch_size (int): 批处理大小，即一次生成的数据样本数量。
-    num_steps (int): 时间步数，即每个样本的时间序列长度。
-    net (object): 神经网络对象，包含网络的输入维度信息。
-    stimulate (int): 刺激时间步数，即在前多少个时间步内进行刺激。
-    delay (int): 延迟时间步数，未在函数中使用。
-    freq (float): 刺激频率，用于控制随机生成数据的概率。
-
-    返回:
-    tuple: 包含两个元素:
-        - x_data (ndarray): 生成的输入数据，形状为 (num_steps, batch_size, net.num_in)。
-        - y_data (ndarray): 生成的标签数据，形状为 (batch_size,)。
-    """
     y_data = u.math.asarray(bst.random.rand(batch_size) < 0.5, dtype=int)
     x_data = u.math.zeros((num_steps, batch_size, net.num_in))
 
@@ -99,45 +82,34 @@ def data_generate_1221(batch_size, num_steps, net, stimulate, delay, freq):
     return x_data, y_data
 
 
-def data_generate_1212(batch_size, num_steps, net, stimulate, delay, freq):
+def data_generate_1208(batch_size, num_steps, net, go_cue_inputs, stimulate, delay, freq):
     y_data = u.math.asarray(bst.random.rand(batch_size) < 0.5, dtype=int)
     x_data = u.math.zeros((num_steps, batch_size, net.num_in))
 
-    middle_index = net.num_in // 2
+    middle_index = (net.num_in - go_cue_inputs) // 2
     for i in range(batch_size):
         if y_data[i] == 1:
             x_data = x_data.at[:stimulate, i, :middle_index].set(
                 bst.random.rand(stimulate, middle_index) < freq * bst.environ.get_dt())
-            x_data = x_data.at[:stimulate, i, middle_index:net.num_in].set(
+            x_data = x_data.at[:stimulate, i, middle_index:net.num_in - go_cue_inputs].set(
                 bst.random.rand(stimulate,
-                                net.num_in - middle_index) < 0.7 * freq * bst.environ.get_dt())
+                                net.num_in - middle_index - go_cue_inputs) < 0.5 * freq * bst.environ.get_dt())
         else:
             x_data = x_data.at[:stimulate, i, :middle_index].set(
                 bst.random.rand(stimulate,
-                                net.num_in - middle_index) < 0.7 * freq * bst.environ.get_dt())
-            x_data = x_data.at[:stimulate, i, middle_index:net.num_in].set(
+                                net.num_in - middle_index - go_cue_inputs) < 0.5 * freq * bst.environ.get_dt())
+            x_data = x_data.at[:stimulate, i, middle_index:net.num_in - go_cue_inputs].set(
                 bst.random.rand(stimulate, middle_index) < freq * bst.environ.get_dt())
+
+    x_data = x_data.at[:stimulate, :, net.num_in - go_cue_inputs:].set(
+        u.math.ones((stimulate, batch_size, go_cue_inputs)))
+    x_data = x_data.at[stimulate + delay: stimulate + delay + stimulate, :, net.num_in - go_cue_inputs:].set(
+        u.math.ones((stimulate, batch_size, go_cue_inputs)))
 
     return x_data, y_data
 
 
 def plot_data(x_data):
-    """
-    绘制数据图像。
-
-    参数:
-    x_data (numpy.ndarray): 输入数据，假设形状为 (units, time, ...)，
-                            其中 units 表示单位数量，time 表示时间步长。
-
-    功能:
-    该函数将输入数据的前5个单位的数据绘制为图像。每个图像将显示单位随时间变化的情况。
-    使用 plt.imshow() 函数显示图像，并设置颜色映射为二值图 (binary)。
-    每个图像的 x 轴表示时间 (ms)，y 轴表示单位。
-    使用 sns.despine() 函数去除图像的顶部和右侧脊柱。
-
-    注意:
-    该函数假设输入数据的形状为 (units, time, ...)，并且会对数据进行转置和轴交换操作。
-    """
     for data_id in range(5):
         plt.clf()
         plt.imshow(x_data.swapaxes(0, 1)[data_id].transpose(), cmap=plt.cm.binary,
@@ -149,35 +121,8 @@ def plot_data(x_data):
         plt.show()
 
 
-def plot_voltage_traces(
-    mem,
-    y_data=None,
-    spk=None,
-    dim=(3, 5),
-    spike_height=5,
-    show=True,
-    stimulate=500,
-    delay=1000
-):
-    """
-    绘制电压轨迹图。
-
-    参数:
-    mem (ndarray 或 u.Quantity): 神经元的电压数据。
-    y_data (ndarray, 可选): 神经元的真实类别标签。
-    spk (ndarray, 可选): 神经元的脉冲数据。
-    dim (tuple, 可选): 图形的维度，默认为 (3, 5)。
-    spike_height (int, 可选): 脉冲的高度，默认为 5。
-    show (bool, 可选): 是否显示图形，默认为 True。
-    stimulate (int, 可选): 刺激开始的时间点，默认为 500。
-    delay (int, 可选): 刺激结束的时间点，默认为 1000。
-
-    返回:
-    无
-
-    示例:
-    >>> plot_voltage_traces(mem, y_data, spk)
-    """
+def plot_voltage_traces(mem, y_data=None, spk=None, dim=(3, 5), spike_height=5, show=True,
+                        stimulate=500, delay=1000):
     fig, gs = bts.visualize.get_figure(*dim, 3, 3)
     if spk is not None:
         mem[spk > 0.0] = spike_height
@@ -199,37 +144,12 @@ def plot_voltage_traces(
 
 
 def get_model_predict(output):
-    """
-    获取模型预测结果的索引。
-
-    参数:
-    output (ndarray): 模型输出的多维数组。
-
-    返回:
-    ndarray: 最大值的索引数组。
-    """
     m = u.math.max(output, axis=0)  # 获取最大值
     am = u.math.argmax(m, axis=1)  # 获取最大值的索引
     return am
 
 
 def cal_model_accuracy(x_test, y_test, net, ext_current, stimulate=500, delay=1000):
-    """
-    计算模型的准确率。
-
-    参数:
-    x_test (array-like): 测试集的输入数据。
-    y_test (array-like): 测试集的标签数据。
-    net (object): 训练好的神经网络模型。
-    ext_current (array-like): 外部输入电流。
-    stimulate (int, 可选): 刺激时间，默认为500。
-    delay (int, 可选): 延迟时间，默认为1000。
-
-    返回:
-    tuple: 包含以下两个元素的元组:
-        - acc (float): 模型的准确率。
-        - am (array-like): 模型预测的标签。
-    """
     vs, spikes, outs = bst.compile.for_loop(net.predict, x_test, ext_current)
     outs = outs[stimulate + delay:]
     am = get_model_predict(outs)  # 获取最大值的索引
@@ -247,25 +167,6 @@ def print_classification_accuracy(output, target, stimulate=500, delay=1000):
 
 
 def predict_and_visualize_net_activity(net, batch_size, x_data, y_data, ext_current):
-    """
-    预测并可视化神经网络活动。
-
-    参数:
-    net (对象): 神经网络模型。
-    batch_size (int): 批处理大小。
-    x_data (ndarray): 输入数据。
-    y_data (ndarray): 目标数据。
-    ext_current (ndarray): 外部电流。
-
-    返回:
-    无
-
-    功能:
-    1. 初始化神经网络的所有状态。
-    2. 使用for循环编译器预测神经网络的输出。
-    3. 绘制电压轨迹图，包括电压和尖峰。
-    4. 打印分类准确率。
-    """
     bst.nn.init_all_states(net, batch_size=batch_size)
     vs, spikes, outs = bst.compile.for_loop(net.predict, x_data, ext_current, pbar=bst.compile.ProgressBar(10))
     plot_voltage_traces(vs, spk=spikes, spike_height=5 * u.mV, show=False)
@@ -274,15 +175,6 @@ def predict_and_visualize_net_activity(net, batch_size, x_data, y_data, ext_curr
 
 
 def plot_loss(train_losses):
-    """
-    绘制训练损失随时间变化的图表。
-
-    参数:
-    train_losses (list): 包含每个epoch训练损失的列表。
-
-    返回:
-    无
-    """
     plt.plot(np.asarray(jnp.asarray(train_losses)))
     plt.xlabel("Epoch")
     plt.ylabel("Training Loss")
@@ -295,15 +187,6 @@ def moving_averge(data, window_size):
 
 
 def plot_accuracy(accuracies):
-    """
-    绘制准确率随时间变化的图表。
-
-    参数:
-    accuracies (list or array-like): 包含准确率值的列表或数组。
-
-    返回:
-    None
-    """
     accuracies = jnp.asarray(accuracies)
     smoothed_accuracies = moving_averge(accuracies, 10)
     plt.plot(np.asarray(smoothed_accuracies))
@@ -314,19 +197,6 @@ def plot_accuracy(accuracies):
 
 
 def get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn):
-    """
-    获取绝对值且非NaN的权重矩阵。
-
-    此函数接受一组权重矩阵，并将其与r2r_conn矩阵逐元素相乘。然后，将所有零值替换为NaN，
-    并取绝对值。最后，返回一个列表，其中包含所有非NaN值的绝对值权重矩阵。
-
-    参数:
-    weight_matrixs (list of ndarray): 权重矩阵的列表。
-    r2r_conn (ndarray): 用于逐元素相乘的连接矩阵。
-
-    返回:
-    list of ndarray: 绝对值且非NaN的权重矩阵列表。
-    """
     abs_non_nan_weight_matrixs = []
     for weight_matrix in weight_matrixs:
         weight_matrix = weight_matrix * r2r_conn
@@ -336,17 +206,21 @@ def get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn):
     return abs_non_nan_weight_matrixs
 
 
+def plot_gevfit_shape(weight_matrixs, r2r_conn):
+    abs_non_nan_weight_matrixs = get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn)
+    shapes = []
+    for weight_matrix in abs_non_nan_weight_matrixs:
+        shape, loc, scale = genextreme.fit(weight_matrix)
+        shapes.append(shape)
+    # plot shape
+    plt.plot(shapes)
+    plt.xlabel("Epoch")
+    plt.ylabel("GEV Shape")
+    plt.title("Shape vs Epoch")
+    plt.show()
+
+
 def plot_gamfit_alpha_beta(weight_matrixs, r2r_conn):
-    """
-    绘制权重矩阵的Gamma分布参数alpha和beta随时间变化的图表，并生成Gamma分布的对数对数图。
-
-    参数:
-    weight_matrixs (list of np.ndarray): 包含多个权重矩阵的列表。
-    r2r_conn (np.ndarray): 用于计算非NaN权重矩阵的连接矩阵。
-
-    返回:
-    无返回值。该函数会生成并显示图表。
-    """
     abs_non_nan_weight_matrixs = get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn)
     alphas = []
     betas = []
@@ -385,18 +259,8 @@ def plot_gamfit_alpha_beta(weight_matrixs, r2r_conn):
     plt.show()
 
 
-def plot_q_coreness(weight_matrixs):
-    """
-    根据给定的权重矩阵列表，计算每个矩阵的核心-边缘结构，并绘制Q Coreness随时间变化的图表。
-
-    参数:
-    weight_matrixs (list): 权重矩阵的列表，每个矩阵表示一个时间点的连接权重。
-
-    返回:
-    tuple: 包含两个元素的元组:
-        - C_list (list): 每个权重矩阵对应的核心-边缘分配列表。
-        - q_coreness (list): 每个权重矩阵对应的Q Coreness值列表。
-    """
+def plot_q_coreness(weight_matrixs, r2r_conn):
+    # abs_non_nan_weight_matrixs = get_abs_non_nan_weight_matrixs(weight_matrixs, r2r_conn)
     eng = matlab.engine.start_matlab()
     eng.addpath(os.path.dirname(__file__))
 
@@ -420,21 +284,6 @@ def plot_q_coreness(weight_matrixs):
 
 
 def calculate_pev(spike_counts, model_predicts, plot_num=4):
-    """
-    计算PEV（预测解释方差）。
-
-    参数:
-    spike_counts (numpy.ndarray): 神经元尖峰计数，形状为 (epoch, batch_size, frame, num_rec)。
-    model_predicts (numpy.ndarray): 模型预测值，形状为 (epoch, batch_size)。
-    plot_num (int, 可选): 分割数据进行计算的数量，默认为4。
-
-    返回:
-    list: 包含PEV数组的列表，每个数组形状为 (frame, num_rec)。
-
-    说明:
-    该函数使用MATLAB引擎计算PEV。首先将输入数据重塑为适当的形状，然后将数据分割为多个部分进行计算。
-    每个部分的PEV计算结果存储在一个数组中，最终返回包含所有PEV数组的列表。
-    """
     eng = matlab.engine.start_matlab()
     eng.addpath(os.path.dirname(__file__))
     # return len=4 list[array shape = (4000, 25, 100)]
@@ -449,6 +298,8 @@ def calculate_pev(spike_counts, model_predicts, plot_num=4):
     model_predicts = model_predicts.reshape(model_predicts.shape[0] * model_predicts.shape[1])
     pev_list = []
 
+    # spike_counts = np.ascontiguousarray(spike_counts)
+    # C = np.ascontiguousarray(C)
     for i in range(plot_num):
         spike_count = spike_counts[trails // plot_num * i: trails // plot_num * (i + 1)]
         model_predict = model_predicts[trails // plot_num * i: trails // plot_num * (i + 1)]
@@ -463,23 +314,6 @@ def calculate_pev(spike_counts, model_predicts, plot_num=4):
 
 
 def calculate_mse(data, axis=0):
-    """
-    计算均方误差（Mean Squared Error, MSE）。
-
-    参数:
-    data (numpy.ndarray): 输入数据数组。
-    axis (int, 可选): 计算均值和均方误差的轴。默认为0。
-
-    返回:
-    float: 计算得到的均方误差。
-
-    示例:
-    >>> data = np.array([[1, 2, 3], [4, 5, 6]])
-    >>> calculate_mse(data, axis=0)
-    array([2.25, 2.25, 2.25])
-    >>> calculate_mse(data, axis=1)
-    array([0.66666667, 0.66666667])
-    """
     mean = np.mean(data, axis=axis)
 
     # 扩展 mean 的形状以匹配 data 的形状
@@ -493,18 +327,6 @@ def calculate_mse(data, axis=0):
 
 
 def plot_spike_count(spike_counts, C, model_predict, plot_num=4):
-    """
-    绘制神经元的尖峰计数图。
-
-    参数:
-    spike_counts (numpy.ndarray): 尖峰计数数据，形状为 (epochs, neurons)。
-    C (numpy.ndarray): 核心和外围的分类标签，形状为 (neurons,)。
-    model_predict (numpy.ndarray): 模型预测值，形状为 (epochs, neurons)。
-    plot_num (int, 可选): 要绘制的图的数量，默认为 4。
-
-    返回:
-    None
-    """
     core = C == 1
     periphery = C == 0
     pev_list = calculate_pev(spike_counts, model_predict, plot_num)
