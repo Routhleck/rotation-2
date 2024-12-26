@@ -11,7 +11,7 @@ from model import SNN_ext
 from utils import (data_generate_1221, current_generate,
                    cal_model_accuracy, plot_accuracy, plot_loss,
                    plot_gamfit_alpha_beta, plot_q_coreness,
-                   plot_spike_count, plot_modularity)
+                   plot_spike_count, plot_modularity, detect_small_world, detect_strength_powerlaw)
 from loss import communicability_loss
 
 # 网络结构参数
@@ -126,8 +126,12 @@ if __name__ == "__main__":
     plot_loss(train_losses)
     # predict_and_visualize_net_activity(net, batch_size, x_data, y_data, current)
     plot_gamfit_alpha_beta(weight_matrixs, r2r_conn)
-    plot_spike_count(spike_counts, C, np.asarray(model_predicts))
+    plot_q_coreness(weight_matrixs)
     plot_modularity(weight_matrixs)
+    plot_spike_count(spike_counts, C, np.asarray(model_predicts))
+    detect_small_world(weight_matrixs)
+    detect_strength_powerlaw(weight_matrixs)
+
 
     # 保存结果
     np.savez(

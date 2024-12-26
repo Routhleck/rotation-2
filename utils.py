@@ -10,6 +10,8 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 from scipy.stats import gamma
 from tqdm import tqdm
+import networkx as nx
+import powerlaw
 
 
 def current_generate(batch_size, num_steps, stimulate, delay, common_volt, go_cue_volt):
@@ -593,3 +595,103 @@ def plot_modularity(weight_matrixs):
     plt.ylabel("Modularity")
     plt.title("Modularity vs Epoch")
     plt.show()
+
+
+def detect_small_world(weight_matrixs):
+    """
+    检测给定的加权图（由其邻接矩阵表示）是否具有小世界特性。
+
+    该函数计算输入图的平均路径长度和聚类系数，并将其与等效随机图的值进行比较。
+    如果平均路径长度大约是随机图的1.1倍或更少，并且聚类系数至少是随机图的1.5倍，则认为该图具有小世界特性。
+
+    参数:
+    - weight_matrixs (List[np.ndarray]): 包含邻接矩阵的列表，其中最后一个元素表示要分析的图的邻接矩阵。邻接矩阵应为NumPy数组，每个条目表示两个节点之间的边权重。
+
+    注意:
+    - 确保输入的`weight_matrixs`至少包含一个项目，并且最后一个项目是目标图的矩阵。
+    - 该函数使用NetworkX库进行图分析，并与等密度的随机生成图进行比较。
+
+    无返回值。直接将结果输出到控制台，指示网络是否具有小世界特性，并提供原始网络和随机网络的计算指标。
+    """
+
+    G = nx.from_numpy_array(weight_matrixs[-1])
+
+    # 计算平均路径长度
+    average_path_length = nx.average_shortest_path_length(G)
+    print(f"平均路径长度: {average_path_length}")
+
+    # 计算聚类系数
+    clustering_coefficient = nx.average_clustering(G)
+    print(f"聚类系数: {clustering_coefficient}")
+
+    # 生成一个随机网络进行比较
+    random_G = nx.erdos_renyi_graph(len(G), nx.density(G))
+
+    # 计算随机网络的平均路径长度
+    random_average_path_length = nx.average_shortest_path_length(random_G)
+    print(f"随机网络平均路径长度: {random_average_path_length}")
+
+    # 计算随机网络的聚类系数
+    random_clustering_coefficient = nx.average_clustering(random_G)
+    print(f"随机网络聚类系数: {random_clustering_coefficient}")
+
+    # 判断是否具有小世界特性
+    if (average_path_length <= random_average_path_length * 1.1 and
+        clustering_coefficient >= random_clustering_coefficient * 1.5):
+        print("该网络具有小世界特性。")
+    else:
+        print("该网络不具有小世界特性。")
+
+def detect_strength_powerlaw(weigh_matrixs):
+    """
+    检测一系列加权矩阵中是否存在幂律分布。
+
+    该函数评估提供的最后10个加权矩阵中的幂律行为强度。
+    它们垂直聚合，处理零值以防止计算过程中出现无穷大，拟合幂律模型，并与指数分布进行比较，以确定数据是否显著符合幂律模式。
+
+    参数
+    ----------
+    weigh_matrixs : list of numpy.ndarray
+        包含2D numpy数组的列表，表示一系列加权矩阵。分析使用最后10个矩阵。
+
+    异常
+    ------
+    ValueError
+        如果 `weigh_matrixs` 包含少于10个矩阵。
+
+    返回
+    -------
+    None
+        该函数直接打印结果，指示数据是否符合幂律分布，并提供幂律参数（alpha和xmin），以及统计检验结果（R和p值）。
+
+    注意
+    ----
+    - 输入矩阵应兼容垂直求和（即列大小匹配）。
+    - NaN值作为 `np.nansum` 的一部分进行求和，但在后处理时检查并处理它们的存在。
+    - p值小于0.05表明强烈反对数据符合指数分布的原假设，意味着支持幂律分布。
+    - 将零值替换为1e-10是避免对数计算或幂律拟合时出现数学问题的常见做法。
+    """
+    # 将 r2r_weight 竖着加起来
+    last_r2r_weight = weigh_matrixs[-10:]
+    r2r_weight_sum = np.nansum(last_r2r_weight, axis=2)
+
+    # print(np.any([np.isnan(r2r_weight) for r2r_weight in r2r_weight_sum.flatten()]))
+
+    flatten_r2r_weight_sum = r2r_weight_sum.flatten()
+    # 将所有的0值替换为1e-10，避免计算时出现无穷大
+    flatten_r2r_weight_sum[flatten_r2r_weight_sum == 0] = 1e-10
+    fit = powerlaw.Fit(r2r_weight_sum.flatten(), discrete=True)
+
+    # 输出幂律分布的参数
+    print(f"Alpha (幂律指数): {fit.power_law.alpha}")
+    print(f"Xmin (幂律分布的最小值): {fit.power_law.xmin}")
+
+    # 判断数据是否符合幂律分布
+    R, p = fit.distribution_compare('power_law', 'exponential')
+    print(f"幂律分布 vs 指数分布的似然比 (R): {R}")
+    print(f"p 值: {p}")
+
+    if p < 0.05:
+        print("数据显著符合幂律分布。")
+    else:
+        print("数据不符合幂律分布。")
