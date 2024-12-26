@@ -120,7 +120,7 @@ def data_generate_1212(batch_size, num_steps, net, stimulate, delay, freq):
     return x_data, y_data
 
 
-def plot_data(x_data):
+def plot_data(x_data, y_data):
     """
     绘制数据图像。
 
@@ -142,7 +142,9 @@ def plot_data(x_data):
         plt.imshow(x_data.swapaxes(0, 1)[data_id].transpose(), cmap=plt.cm.binary,
                    interpolation='nearest', aspect="auto")
         plt.xlabel("Time (ms)")
-        plt.ylabel("Unit")
+        plt.ylabel("Neuron Index", labelpad=10)
+        plt.yticks(np.arange(20))
+        plt.title(f"class: {y_data[data_id]}")
         sns.despine()
 
         plt.show()

@@ -148,6 +148,36 @@ class SNN_ext(bst.nn.DynamicsGroup):
         o_current = self.exc2o(e_sps)
         return self.o(o_current), self.r.V.value.mantissa
 
+    # predict方法：用于预测并获取递归层的膜电位值、脉冲输出和最终输出
+    def predict(self, spike, ext_current):
+        """
+        网络前向传播预测
+        参数:
+            spike: 输入脉冲
+            ext_current: 外部电流
+        返回:
+            递归层膜电位值、递归层脉冲输出和最终输出
+        """
+        rec_spikes = self.r.get_spike()
+        e_sps, i_sps = jnp.split(rec_spikes, [self.num_exc], axis=-1)
+
+        # self.update_spike_count(rec_spikes)
+
+        i2r_current = self.i2r(spike)
+        exc2r_current = self.exc2r_coba.update(self.exc2r(e_sps), self.r.V.value)
+        inh2r_current = self.inh2r_coba.update(self.inh2r(i_sps), self.r.V.value)
+
+        r_current = i2r_current + exc2r_current + inh2r_current
+        r_current = r_current.at[:, :self.num_exc].set(r_current[:, :self.num_exc] + ext_current)
+        self.r(r_current)
+
+        o_current = self.exc2o(e_sps)
+
+        out = self.o(o_current)
+
+        # 返回递归层的膜电位值、递归层脉冲输出和最终输出
+        return self.r.V.value, rec_spikes, out
+
     def get_weight_matrix(self):
         """获取权重矩阵"""
         exc2r_weight = self.exc2r.layers[0].weight.value['weight'].mantissa

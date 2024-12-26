@@ -8,7 +8,7 @@ import numpy as np
 bst.random.seed(43)
 
 from model import SNN_ext
-from utils import (data_generate_1221, current_generate,
+from utils import (data_generate_1221, current_generate, plot_data,
                    cal_model_accuracy, plot_accuracy, plot_loss,
                    plot_gamfit_alpha_beta, plot_q_coreness,
                    plot_spike_count, plot_modularity, detect_small_world, detect_strength_powerlaw)
@@ -48,6 +48,7 @@ current = current_generate(batch_size, num_steps, stimulate, delay, common_curre
 optimizer = bst.optim.Adam(lr=1e-3, beta1=0.9, beta2=0.999)
 optimizer.register_trainable_weights(net.states(bst.ParamState))
 
+plot_data(x_data, y_data)
 
 def loss_fn():
     """
